@@ -12,6 +12,7 @@ import { fetchExperiments, deleteExperiment } from "../lib/api.js";
 import { Badge } from "./ui/badge.js";
 import { Button } from "./ui/button.js";
 import { ExperimentDetailModal } from "./ExperimentDetailModal.js";
+import { ConfirmModal } from "./ConfirmModal.js";
 
 interface ExperimentsHistoryDrawerProps {
   isOpen: boolean;
@@ -30,6 +31,7 @@ export const ExperimentsHistoryDrawer: React.FC<ExperimentsHistoryDrawerProps> =
   const [filterAgent, setFilterAgent] = useState<boolean>(true);
   const [loading, setLoading] = useState<boolean>(false);
   const [selectedExperimentForModal, setSelectedExperimentForModal] = useState<ExperimentRecord | null>(null);
+  const [deleteExperimentId, setDeleteExperimentId] = useState<string | null>(null);
 
   const loadData = () => {
     setLoading(true);
@@ -47,14 +49,18 @@ export const ExperimentsHistoryDrawer: React.FC<ExperimentsHistoryDrawerProps> =
 
   if (!isOpen) return null;
 
-  const handleDelete = async (id: string, e: React.MouseEvent) => {
+  const handleDelete = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm("Deseja realmente excluir este experimento do histórico?")) {
-      const ok = await deleteExperiment(id);
-      if (ok) {
-        setExperiments((prev) => prev.filter((item) => item.id !== id));
-      }
+    setDeleteExperimentId(id);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteExperimentId) return;
+    const ok = await deleteExperiment(deleteExperimentId);
+    if (ok) {
+      setExperiments((prev) => prev.filter((item) => item.id !== deleteExperimentId));
     }
+    setDeleteExperimentId(null);
   };
 
   return (
@@ -69,8 +75,7 @@ export const ExperimentsHistoryDrawer: React.FC<ExperimentsHistoryDrawerProps> =
           zIndex: 9999,
           display: "flex",
           justifyContent: "flex-end",
-          backgroundColor: "rgba(0, 0, 0, 0.65)",
-          backdropFilter: "blur(4px)",
+          backgroundColor: "rgba(5, 5, 8, 0.85)",
         }}
         onClick={onClose}
       >
@@ -299,6 +304,17 @@ export const ExperimentsHistoryDrawer: React.FC<ExperimentsHistoryDrawerProps> =
           }}
         />
       )}
+
+      {/* Modal de Confirmação In-App para exclusão */}
+      <ConfirmModal
+        isOpen={deleteExperimentId !== null}
+        onClose={() => setDeleteExperimentId(null)}
+        onConfirm={handleConfirmDelete}
+        title="Excluir Experimento"
+        description="Deseja realmente excluir este registro do histórico de experimentos? Esta ação é irreversível."
+        confirmText="Excluir"
+        variant="danger"
+      />
     </>
   );
 };

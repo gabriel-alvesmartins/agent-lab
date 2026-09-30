@@ -58,6 +58,7 @@ app.get("/api/agents", (_req, res) => {
     readsFromCount: agent.readsFrom.length,
     producesArtifact: agent.produces.artifact,
     presetsCount: agent.presets.length,
+    version: agent.version || "1.0.0",
   }));
   res.json({ agents: list });
 });
@@ -77,6 +78,7 @@ app.get("/api/agents/:id", async (req, res) => {
     res.json({
       agent: {
         ...agentMeta,
+        version: agentMeta.version || "1.0.0",
         canonicalPrompt,
         inputSchemaJson: schemas.inputSchemaJson,
         outputSchemaJson: schemas.outputSchemaJson,
@@ -88,6 +90,7 @@ app.get("/api/agents/:id", async (req, res) => {
     res.json({
       agent: {
         ...agentMeta,
+        version: agentMeta.version || "1.0.0",
         canonicalPrompt: `[Prompt canônico temporariamente indisponível: ${err.message}]`,
         inputSchemaJson: null,
         outputSchemaJson: null,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Header } from "./components/Header.js";
 import { AgentSidebar } from "./components/AgentSidebar.js";
 import { AgentSpecBanner } from "./components/AgentSpecBanner.js";
@@ -33,6 +33,7 @@ import {
 import { ExperimentsHistoryDrawer } from "./components/ExperimentsHistoryDrawer.js";
 import { AgentConfigSheet } from "./components/AgentConfigSheet.js";
 import { SavedAssetsDrawer } from "./components/SavedAssetsDrawer.js";
+import { AlertCircle, CheckCircle2 } from "lucide-react";
 
 const DEFAULT_CONFIG: AgentCharacteristicsConfig = {
   promptMode: "canonical",
@@ -80,7 +81,16 @@ export function App() {
   // Cenários salvos locais e versões salvas de agentes
   const [savedScenarios, setSavedScenarios] = useState<SavedScenario[]>([]);
   const [savedAgentVersions, setSavedAgentVersions] = useState<SavedAgentVersion[]>([]);
+  const [activeProfileId, setActiveProfileId] = useState<string>("canonical");
   const [isSaveModalOpen, setIsSaveModalOpen] = useState<boolean>(false);
+  const [editingAgentVersion, setEditingAgentVersion] = useState<SavedAgentVersion | null>(null);
+  const [toastMessage, setToastMessage] = useState<{ message: string; type: "success" | "error" } | null>(null);
+  const [maximizedPane, setMaximizedPane] = useState<"input" | "output" | null>(null);
+
+  const showToast = (message: string, type: "success" | "error" = "success") => {
+    setToastMessage({ message, type });
+    setTimeout(() => setToastMessage(null), 3500);
+  };
 
   // 1. Carrega lista inicial de agentes e provedores
   useEffect(() => {
@@ -106,15 +116,10 @@ export function App() {
     fetchAgentDetails(selectedAgentId)
       .then((agent) => {
         setCurrentAgent(agent);
-        // Carrega o primeiro preset por padrão
-        if (agent.presets && agent.presets.length > 0) {
-          const first = agent.presets[0];
-          setInputJson(JSON.stringify(first.input, null, 2));
-          setExpectedJson(first.expectedOutput ? JSON.stringify(first.expectedOutput, null, 2) : "");
-        } else {
-          setInputJson("{\n  \n}");
-          setExpectedJson("");
-        }
+        // O campo input e expected ficam vazios por padrão para todos os agentes
+        setInputJson("");
+        setExpectedJson("");
+        setActiveProfileId("canonical");
 
         // Configuração do agente (aplica customização pendente se houver, ou valores de fábrica)
         if (pendingCustomConfigRef.current) {
@@ -141,7 +146,7 @@ export function App() {
   }, [selectedAgentId]);
 
   // 3. Execução Isolada do Agente
-  const handleRun = async () => {
+  const handleRun = React.useCallback(async () => {
     if (!selectedAgentId) return;
     setIsRunning(true);
     setExecutionResult(null);
@@ -150,7 +155,7 @@ export function App() {
     try {
       let parsedInput: unknown;
       try {
-        parsedInput = JSON.parse(inputJson);
+        parsedInput = inputJson.trim() ? JSON.parse(inputJson) : {};
       } catch (err: any) {
         setIsRunning(false);
         setExecutionResult({
@@ -182,10 +187,10 @@ export function App() {
     } finally {
       setIsRunning(false);
     }
-  };
+  }, [selectedAgentId, inputJson, mode, selectedModel, agentConfig]);
 
   // 4. Execução do Teste A/B Flexível (Entre quaisquer duas versões)
-  const handleRunAB = async (
+  const handleRunAB = React.useCallback(async (
     sideA?: { name: string; config?: AgentCharacteristicsConfig },
     sideB?: { name: string; config?: AgentCharacteristicsConfig }
   ) => {
@@ -196,7 +201,7 @@ export function App() {
     try {
       let parsedInput: unknown;
       try {
-        parsedInput = JSON.parse(inputJson);
+        parsedInput = inputJson.trim() ? JSON.parse(inputJson) : {};
       } catch (err: any) {
         setIsRunningAB(false);
         setExecutionResult({
@@ -251,13 +256,13 @@ export function App() {
     } finally {
       setIsRunningAB(false);
     }
-  };
+  }, [selectedAgentId, inputJson, mode, selectedModel, agentConfig]);
 
   // 5. Validação de Schema
-  const handleValidate = async () => {
+  const handleValidate = React.useCallback(async () => {
     if (!selectedAgentId) return;
     try {
-      const parsedInput = JSON.parse(inputJson);
+      const parsedInput = inputJson.trim() ? JSON.parse(inputJson) : {};
       const res = await validateAgentInput(selectedAgentId, parsedInput);
       setValidationStatus(res);
     } catch (err: any) {
@@ -266,20 +271,21 @@ export function App() {
         errors: [{ path: "JSON", message: `Sintaxe inválida: ${err.message}` }],
       });
     }
-  };
+  }, [selectedAgentId, inputJson]);
 
   // 5. Reset das Características
-  const handleResetAgentConfig = () => {
+  const handleResetAgentConfig = React.useCallback(() => {
     if (currentAgent) {
       setAgentConfig({
         ...DEFAULT_CONFIG,
         enabledTools: currentAgent.toolNames || [],
         promptOverride: currentAgent.canonicalPrompt || "",
       });
+      setActiveProfileId("canonical");
     }
-  };
+  }, [currentAgent]);
 
-  const handleSelectAgentForWorkbench = (agentId: string, targetConfig: AgentCharacteristicsConfig) => {
+  const handleSelectAgentForWorkbench = React.useCallback((agentId: string, targetConfig: AgentCharacteristicsConfig) => {
     if (agentId !== selectedAgentId) {
       pendingCustomConfigRef.current = targetConfig;
       setSelectedAgentId(agentId);
@@ -287,10 +293,10 @@ export function App() {
       setAgentConfig(targetConfig);
     }
     setIsConfigOpen(false);
-  };
+  }, [selectedAgentId]);
 
   // 6. Gestão de Cenários
-  const handleSaveScenario = (title: string) => {
+  const handleSaveScenario = React.useCallback((title: string) => {
     try {
       const parsed = JSON.parse(inputJson);
       let parsedExpected = undefined;
@@ -312,12 +318,13 @@ export function App() {
 
       // Recarrega lista
       setSavedScenarios(loadSavedScenarios(selectedAgentId));
+      showToast("Cenário salvo com sucesso!", "success");
     } catch (err: any) {
-      alert(`Não foi possível salvar o cenário: ${err.message}`);
+      showToast(`Não foi possível salvar o cenário: ${err.message}`, "error");
     }
-  };
+  }, [selectedAgentId, inputJson, expectedJson, agentConfig]);
 
-  const handleLoadScenario = (scenario: SavedScenario) => {
+  const handleLoadScenario = React.useCallback((scenario: SavedScenario) => {
     setInputJson(JSON.stringify(scenario.input, null, 2));
     if (scenario.expectedOutput) {
       setExpectedJson(JSON.stringify(scenario.expectedOutput, null, 2));
@@ -325,12 +332,12 @@ export function App() {
     if (scenario.agentConfig) {
       setAgentConfig(scenario.agentConfig);
     }
-  };
+  }, []);
 
-  const handleDeleteScenario = (id: string) => {
+  const handleDeleteScenario = React.useCallback((id: string) => {
     deleteScenario(id);
     setSavedScenarios(loadSavedScenarios(selectedAgentId));
-  };
+  }, [selectedAgentId]);
 
   // 7. Seleção de Experimento do Histórico
   const handleSelectExperiment = (exp: ExperimentRecord) => {
@@ -393,26 +400,57 @@ export function App() {
   };
 
   // 8. Adoção da Versão Customizada como Nova Referência
-  const handlePromoteV2 = (output: unknown) => {
+  const handlePromoteV2 = React.useCallback((output: unknown) => {
     if (!output) return;
     setExpectedJson(JSON.stringify(output, null, 2));
-    alert("✅ Saída da versão customizada promovida com sucesso para a 'Saída Esperada (Referência)'!");
-  };
+    showToast("Saída da versão customizada promovida para a Saída Esperada!", "success");
+  }, []);
 
   // 9. Ações da Biblioteca de Agentes & Presets
-  const handleOpenLibrary = (tab: "agents" | "presets" = "agents") => {
+  const handleOpenLibrary = React.useCallback((tab: "agents" | "presets" = "agents") => {
     setLibraryInitialTab(tab);
     setIsCreateAgentModalOpen(false);
     setIsLibraryOpen(true);
-  };
+  }, []);
 
-  const handleOpenCreateAgent = () => {
+  const handleOpenCreateAgent = React.useCallback(() => {
+    setEditingAgentVersion(null);
     setLibraryInitialTab("agents");
     setIsCreateAgentModalOpen(true);
     setIsLibraryOpen(true);
-  };
+  }, []);
 
-  const handleApplyPresetFromLibrary = (preset: {
+  const handleOpenEditAgent = React.useCallback((versionId: string) => {
+    const v = savedAgentVersions.find((item) => item.id === versionId);
+    if (v) {
+      setEditingAgentVersion(v);
+      setLibraryInitialTab("agents");
+      setIsCreateAgentModalOpen(false);
+      setIsLibraryOpen(true);
+    }
+  }, [savedAgentVersions]);
+
+  const handleOpenConfigModal = React.useCallback(() => {
+    setIsConfigOpen(true);
+  }, []);
+
+  const handleOpenSaveScenarioModal = React.useCallback(() => {
+    setIsSaveModalOpen(true);
+  }, []);
+
+  const handleToggleMaximizeInput = React.useCallback(() => {
+    setMaximizedPane((prev) => (prev === "input" ? null : "input"));
+  }, []);
+
+  const handleToggleMaximizeOutput = React.useCallback(() => {
+    setMaximizedPane((prev) => (prev === "output" ? null : "output"));
+  }, []);
+
+  const handleCloseMaximize = React.useCallback(() => {
+    setMaximizedPane(null);
+  }, []);
+
+  const handleApplyPresetFromLibrary = React.useCallback((preset: {
     agentId: string;
     input: Record<string, unknown>;
     title: string;
@@ -426,15 +464,16 @@ export function App() {
       setExpectedJson(JSON.stringify(preset.expectedOutput, null, 2));
     }
     setIsLibraryOpen(false);
-  };
+  }, [selectedAgentId]);
 
-  const handleApplyVersionFromLibrary = (agentId: string, version: SavedAgentVersion) => {
+  const handleApplyVersionFromLibrary = React.useCallback((agentId: string, version: SavedAgentVersion) => {
     if (agentId !== selectedAgentId) {
       setSelectedAgentId(agentId);
     }
     setAgentConfig(version.config);
+    setActiveProfileId(version.id);
     setIsLibraryOpen(false);
-  };
+  }, [selectedAgentId]);
 
   // 10. Atalhos de Teclado Globais (Ctrl+Enter, Ctrl+Shift+Enter, Ctrl+H, Esc)
   useEffect(() => {
@@ -457,8 +496,12 @@ export function App() {
         setIsHistoryOpen((prev) => !prev);
         return;
       }
-      // Escape -> Fechar drawers e modais abertos
+      // Escape -> Fechar drawers, modais e pop-ups ampliados
       if (e.key === "Escape") {
+        if (maximizedPane) {
+          setMaximizedPane(null);
+          return;
+        }
         setIsHistoryOpen(false);
         setIsConfigOpen(false);
         setIsSaveModalOpen(false);
@@ -470,33 +513,74 @@ export function App() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [inputJson, selectedAgentId, mode, selectedModel, agentConfig, isRunning, isRunningAB]);
+  }, [inputJson, selectedAgentId, mode, selectedModel, agentConfig, isRunning, isRunningAB, maximizedPane]);
+
+  // Detecta se a configuração atual foi modificada em relação aos padrões
+  const isConfigModified = Boolean(
+    currentAgent &&
+      (agentConfig.promptMode !== "canonical" ||
+        agentConfig.outputSchemaMode === "override" ||
+        agentConfig.inputSchemaMode === "override" ||
+        agentConfig.temperature !== 0.2 ||
+        agentConfig.effort !== "medium" ||
+        agentConfig.mode !== "standard" ||
+        (Boolean(currentAgent.toolNames) &&
+          Boolean(agentConfig.enabledTools) &&
+          agentConfig.enabledTools.length !== (currentAgent.toolNames?.length ?? 0)))
+  );
+
+  // Calcula a nomenclatura da versão ativa para exibição na tag do banner
+  const activeVersionName = useMemo(() => {
+    if (activeProfileId === "canonical") {
+      return isConfigModified ? "v1.0.0 (Personalizada)" : "v1.0.0 (Oficial)";
+    }
+    if (activeProfileId === "active") {
+      return isConfigModified ? "v1.0.0 (Personalizada)" : "v1.0.0 (Padrão)";
+    }
+    const saved = savedAgentVersions.find((v) => v.id === activeProfileId);
+    if (saved) {
+      return saved.name;
+    }
+    return isConfigModified ? "v1.0.0 (Personalizada)" : "v1.0.0 (Oficial)";
+  }, [activeProfileId, isConfigModified, savedAgentVersions]);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
-      {/* Top Header */}
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100vh",
+        background: "var(--bg-main)",
+        color: "var(--text-main)",
+        overflow: "hidden",
+      }}
+    >
+      {/* Top Application Header */}
       <Header
+        serverOnline={serverOnline}
         mode={mode}
         onModeChange={setMode}
         selectedModel={selectedModel}
         onModelChange={setSelectedModel}
         modelProviders={modelProviders}
-        serverOnline={serverOnline}
         onOpenHistory={() => setIsHistoryOpen(true)}
         onOpenLibrary={handleOpenLibrary}
         onOpenCreateAgent={handleOpenCreateAgent}
       />
 
-      {/* Main Container */}
-      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
-        {/* Left Sidebar: 15 Agents Catalog */}
+      <div style={{ display: "flex", flex: 1, minHeight: 0, overflow: "hidden" }}>
+        {/* Left Agents Directory Sidebar */}
         <AgentSidebar
           agents={agents}
           selectedAgentId={selectedAgentId}
-          onSelectAgent={setSelectedAgentId}
+          onSelectAgent={(id) => {
+            setSelectedAgentId(id);
+            setExecutionResult(null);
+            setAbResult(null);
+          }}
         />
 
-        {/* Right Area: Workspace */}
+        {/* Center Workbench */}
         <main
           style={{
             flex: 1,
@@ -509,19 +593,12 @@ export function App() {
         >
           {currentAgent ? (
             <>
-              {/* Agent Spec & Upstream/Downstream Banner */}
+              {/* Agent Spec & Upstream/Downstream Banner com Tag de Versão */}
               <AgentSpecBanner
                 agent={currentAgent}
-                onOpenConfig={() => setIsConfigOpen(true)}
-                isConfigModified={
-                  agentConfig.promptMode !== "canonical" ||
-                  agentConfig.outputSchemaMode === "override" ||
-                  agentConfig.inputSchemaMode === "override" ||
-                  agentConfig.temperature !== 0.2 ||
-                  agentConfig.effort !== "medium" ||
-                  agentConfig.mode !== "standard" ||
-                  (Boolean(currentAgent.toolNames) && Boolean(agentConfig.enabledTools) && agentConfig.enabledTools.length !== currentAgent.toolNames.length)
-                }
+                onOpenConfig={handleOpenConfigModal}
+                isConfigModified={isConfigModified}
+                activeVersionName={activeVersionName}
               />
 
               {/* Workbench Grid: Left = Input & Expected Editor, Right = Output Viewer */}
@@ -543,7 +620,7 @@ export function App() {
                   onExpectedChange={setExpectedJson}
                   agentConfig={agentConfig}
                   onAgentConfigChange={setAgentConfig}
-                  onOpenConfig={() => setIsConfigOpen(true)}
+                  onOpenConfig={handleOpenConfigModal}
                   onRun={handleRun}
                   isRunning={isRunning}
                   onRunAB={handleRunAB}
@@ -553,13 +630,19 @@ export function App() {
                   savedScenarios={savedScenarios}
                   onLoadScenario={handleLoadScenario}
                   onDeleteScenario={handleDeleteScenario}
-                  onOpenSaveModal={() => setIsSaveModalOpen(true)}
+                  onOpenSaveModal={handleOpenSaveScenarioModal}
                   savedAgentVersions={savedAgentVersions}
+                  activeProfileId={activeProfileId}
+                  onActiveProfileChange={setActiveProfileId}
                   onSelectAgentVersion={(verId) => {
+                    setActiveProfileId(verId);
                     if (verId === "canonical") handleResetAgentConfig();
                   }}
                   onOpenLibrary={handleOpenLibrary}
                   onOpenCreateAgent={handleOpenCreateAgent}
+                  onEditAgentVersion={handleOpenEditAgent}
+                  isMaximized={false}
+                  onToggleMaximize={handleToggleMaximizeInput}
                 />
 
                 {/* Right: Output Viewer */}
@@ -571,6 +654,8 @@ export function App() {
                   expectedJson={expectedJson}
                   isRunning={isRunning || isRunningAB}
                   onPromoteV2={handlePromoteV2}
+                  isMaximized={false}
+                  onToggleMaximize={handleToggleMaximizeOutput}
                 />
               </div>
             </>
@@ -633,11 +718,14 @@ export function App() {
         onClose={() => {
           setIsLibraryOpen(false);
           setIsCreateAgentModalOpen(false);
+          setEditingAgentVersion(null);
         }}
         currentAgentId={selectedAgentId}
         agents={agents}
         initialTab={libraryInitialTab}
         initialOpenCreateModal={isCreateAgentModalOpen}
+        initialEditVersion={editingAgentVersion}
+        onInitialEditVersionConsumed={() => setEditingAgentVersion(null)}
         onCreateModalClose={() => setIsCreateAgentModalOpen(false)}
         onApplyPresetToWorkbench={handleApplyPresetFromLibrary}
         onApplyVersionToWorkbench={handleApplyVersionFromLibrary}
@@ -647,6 +735,151 @@ export function App() {
         }}
         onVersionSaved={() => setSavedAgentVersions(loadSavedAgentVersions(selectedAgentId))}
       />
+
+      {/* ── Pop-up Ampliado para Edição de Entrada (InputEditor) ──── */}
+      {maximizedPane === "input" && currentAgent && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 10040,
+            backgroundColor: "rgba(5, 5, 8, 0.88)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px 24px",
+          }}
+          onClick={handleCloseMaximize}
+        >
+          <div
+            className="p7-modal-enter"
+            style={{
+              width: "100%",
+              maxWidth: 1360,
+              height: "92vh",
+              maxHeight: 900,
+              display: "flex",
+              flexDirection: "column",
+              borderRadius: "var(--radius-lg, 12px)",
+              overflow: "hidden",
+              border: "1px solid var(--border-medium)",
+              background: "var(--bg-surface)",
+              boxShadow: "0 25px 70px rgba(0, 0, 0, 0.95)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <InputEditor
+              agent={currentAgent}
+              inputJson={inputJson}
+              onInputChange={setInputJson}
+              expectedJson={expectedJson}
+              onExpectedChange={setExpectedJson}
+              agentConfig={agentConfig}
+              onAgentConfigChange={setAgentConfig}
+              onOpenConfig={handleOpenConfigModal}
+              onRun={handleRun}
+              isRunning={isRunning}
+              onRunAB={handleRunAB}
+              isRunningAB={isRunningAB}
+              validationStatus={validationStatus}
+              onValidate={handleValidate}
+              savedScenarios={savedScenarios}
+              onLoadScenario={handleLoadScenario}
+              onDeleteScenario={handleDeleteScenario}
+              onOpenSaveModal={handleOpenSaveScenarioModal}
+              savedAgentVersions={savedAgentVersions}
+              activeProfileId={activeProfileId}
+              onActiveProfileChange={setActiveProfileId}
+              onSelectAgentVersion={(verId) => {
+                setActiveProfileId(verId);
+                if (verId === "canonical") handleResetAgentConfig();
+              }}
+              onOpenLibrary={handleOpenLibrary}
+              onOpenCreateAgent={handleOpenCreateAgent}
+              onEditAgentVersion={handleOpenEditAgent}
+              isMaximized={true}
+              onToggleMaximize={handleCloseMaximize}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ── Pop-up Ampliado para Visualização de Saída (OutputViewer) ──── */}
+      {maximizedPane === "output" && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 10040,
+            backgroundColor: "rgba(5, 5, 8, 0.88)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px 24px",
+          }}
+          onClick={handleCloseMaximize}
+        >
+          <div
+            className="p7-modal-enter"
+            style={{
+              width: "100%",
+              maxWidth: 1480,
+              height: "92vh",
+              maxHeight: 920,
+              display: "flex",
+              flexDirection: "column",
+              borderRadius: "var(--radius-lg, 12px)",
+              overflow: "hidden",
+              border: "1px solid var(--border-medium)",
+              background: "var(--bg-surface)",
+              boxShadow: "0 25px 70px rgba(0, 0, 0, 0.95)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <OutputViewer
+              result={executionResult}
+              abResult={abResult}
+              agentName={selectedAgentId}
+              inputJson={inputJson}
+              expectedJson={expectedJson}
+              isRunning={isRunning || isRunningAB}
+              onPromoteV2={handlePromoteV2}
+              isMaximized={true}
+              onToggleMaximize={handleCloseMaximize}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Notificação Toast In-App (elimina alerts nativos) */}
+      {toastMessage && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 24,
+            right: 24,
+            zIndex: 10090,
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "10px 16px",
+            borderRadius: "var(--radius-md, 8px)",
+            background: toastMessage.type === "error" ? "rgba(225, 29, 72, 0.95)" : "rgba(15, 23, 42, 0.95)",
+            color: "#ffffff",
+            border: toastMessage.type === "error" ? "1px solid rgba(244, 63, 94, 0.4)" : "1px solid rgba(6, 182, 212, 0.4)",
+            boxShadow: "0 10px 30px rgba(0, 0, 0, 0.6)",
+            fontSize: 13,
+            fontWeight: 500,
+          }}
+        >
+          {toastMessage.type === "error" ? (
+            <AlertCircle size={16} className="text-rose-400" />
+          ) : (
+            <CheckCircle2 size={16} className="text-cyan-400" />
+          )}
+          <span>{toastMessage.message}</span>
+        </div>
+      )}
     </div>
   );
 }

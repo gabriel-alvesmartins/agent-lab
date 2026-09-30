@@ -14,6 +14,10 @@ import {
   Check,
   ArrowLeftRight,
   Layers,
+  Edit3,
+  Maximize2,
+  Minimize2,
+  X,
 } from "lucide-react";
 import {
   AgentCharacteristicsConfig,
@@ -54,11 +58,16 @@ interface InputEditorProps {
   onOpenSaveModal: () => void;
   savedAgentVersions?: SavedAgentVersion[];
   onSelectAgentVersion?: (versionId: string) => void;
+  activeProfileId?: string;
+  onActiveProfileChange?: (val: string) => void;
   onOpenLibrary?: (tab?: "agents" | "presets") => void;
   onOpenCreateAgent?: () => void;
+  onEditAgentVersion?: (versionId: string) => void;
+  isMaximized?: boolean;
+  onToggleMaximize?: () => void;
 }
 
-export const InputEditor: React.FC<InputEditorProps> = ({
+const InputEditorComponent: React.FC<InputEditorProps> = ({
   agent,
   inputJson,
   onInputChange,
@@ -77,31 +86,119 @@ export const InputEditor: React.FC<InputEditorProps> = ({
   onOpenSaveModal,
   savedAgentVersions = [],
   onSelectAgentVersion,
+  activeProfileId: activeProfileIdProp,
+  onActiveProfileChange,
   onOpenLibrary,
   onOpenCreateAgent,
+  onEditAgentVersion,
+  isMaximized = false,
+  onToggleMaximize,
 }) => {
   const [isShaking, setIsShaking] = useState(false);
   const [sideAId, setSideAId] = useState<string>("canonical");
   const [sideBId, setSideBId] = useState<string>("active");
-  const [activeProfileId, setActiveProfileId] = useState<string>("active");
+  const [localActiveProfileId, setLocalActiveProfileId] = useState<string>("canonical");
+  const activeProfile = activeProfileIdProp ?? localActiveProfileId;
+  const [selectedScenarioKey, setSelectedScenarioKey] = useState<string>("");
+
+  // Estado local desacoplado para resposta instantânea ao digitar (Zero Lag na UI)
+  const [localInput, setLocalInput] = useState<string>(inputJson);
+  const debounceTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  // Sincroniza estado local quando inputJson muda externamente (mudança de agente, preset, reset)
+  React.useEffect(() => {
+    setLocalInput(inputJson);
+  }, [inputJson]);
+
+  // Função para sincronizar imediatamente o valor digitado com o App
+  const flushInput = React.useCallback(
+    (val: string) => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
+      onInputChange(val);
+    },
+    [onInputChange]
+  );
+
+  // Manipulador de digitação suave com debounce de 250ms
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setLocalInput(val);
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      onInputChange(val);
+    }, 250);
+  };
+
+  // Limpa o timer de debounce ao desmontar
+  React.useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Reseta cenário selecionado se mudar o agente
+  React.useEffect(() => {
+    setSelectedScenarioKey("");
+  }, [agent.id]);
 
   // Formatador JSON
   const handleFormat = () => {
     try {
-      const parsed = JSON.parse(inputJson);
-      onInputChange(JSON.stringify(parsed, null, 2));
+      const parsed = JSON.parse(localInput);
+      const formatted = JSON.stringify(parsed, null, 2);
+      setLocalInput(formatted);
+      flushInput(formatted);
     } catch {
       setIsShaking(true);
       setTimeout(() => setIsShaking(false), 300);
     }
   };
 
-  const handleSelectPreset = (presetId: string) => {
-    const preset = agent.presets.find((p) => p.id === presetId);
-    if (preset) {
-      onInputChange(JSON.stringify(preset.input, null, 2));
-      if (preset.expectedOutput && onExpectedChange) {
-        onExpectedChange(JSON.stringify(preset.expectedOutput, null, 2));
+  // Validação garantindo sincronização imediata
+  const handleValidateClick = () => {
+    flushInput(localInput);
+    onValidate();
+  };
+
+  // Execução isolada garantindo sincronização imediata
+  const handleRunClick = () => {
+    flushInput(localInput);
+    onRun();
+  };
+
+  // Seletor unificado de Cenários (Presets Padrão + Cenários Salvos)
+  const handleSelectScenario = (val: string) => {
+    if (!val) return;
+    if (val === "__clear__") {
+      setLocalInput("");
+      flushInput("");
+      if (onExpectedChange) onExpectedChange("");
+      setSelectedScenarioKey("");
+      return;
+    }
+    if (val.startsWith("preset:")) {
+      const presetId = val.replace("preset:", "");
+      const preset = agent.presets.find((p) => p.id === presetId);
+      if (preset) {
+        const text = JSON.stringify(preset.input, null, 2);
+        setLocalInput(text);
+        flushInput(text);
+        if (preset.expectedOutput && onExpectedChange) {
+          onExpectedChange(JSON.stringify(preset.expectedOutput, null, 2));
+        }
+      }
+    } else if (val.startsWith("saved:")) {
+      const savedId = val.replace("saved:", "");
+      const scn = savedScenarios.find((s) => s.id === savedId);
+      if (scn) {
+        onLoadScenario(scn);
       }
     }
   };
@@ -128,7 +225,7 @@ export const InputEditor: React.FC<InputEditorProps> = ({
     agentConfig.outputSchemaMode === "override" ||
     agentConfig.inputSchemaMode === "override";
 
-  const lineCount = inputJson.split("\n").length;
+  const lineCount = localInput.split("\n").length;
 
   // Resolve os detalhes de configuração para um lado do teste A/B
   const resolveSide = (id: string): { name: string; config?: AgentCharacteristicsConfig } => {
@@ -165,13 +262,18 @@ export const InputEditor: React.FC<InputEditorProps> = ({
 
   const handleExecuteAB = () => {
     if (!onRunAB) return;
+    flushInput(localInput);
     const sideA = resolveSide(sideAId);
     const sideB = resolveSide(sideBId);
     onRunAB(sideA, sideB);
   };
 
   const handleProfileSelect = (val: string) => {
-    setActiveProfileId(val);
+    if (onActiveProfileChange) {
+      onActiveProfileChange(val);
+    } else {
+      setLocalActiveProfileId(val);
+    }
     if (val === "canonical") {
       if (onSelectAgentVersion) onSelectAgentVersion("canonical");
     } else if (val === "active") {
@@ -198,24 +300,24 @@ export const InputEditor: React.FC<InputEditorProps> = ({
       {/* ── TOP BAR: Versão do Agente, Presets, Cenários e Ajustar ──── */}
       <div
         style={{
-          padding: "8px 14px",
+          padding: "6px 14px",
           borderBottom: "1px solid var(--border-subtle)",
           display: "flex",
-          alignItems: "center",
+          alignItems: "flex-start",
           justifyContent: "space-between",
-          flexWrap: "wrap",
-          gap: 8,
+          flexWrap: "nowrap",
+          gap: 10,
           background: "var(--bg-surface)",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", flex: 1, minWidth: 0 }}>
           {/* Seletor de Versão do Agente (Perfil Ativo) */}
-          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
             <span style={{ fontSize: 10, fontWeight: 700, color: "var(--text-subtle)", textTransform: "uppercase" }}>
               Versão:
             </span>
             <select
-              value={activeProfileId}
+              value={activeProfile}
               onChange={(e) => {
                 if (e.target.value === "__create_new__") {
                   if (onOpenCreateAgent) {
@@ -236,6 +338,8 @@ export const InputEditor: React.FC<InputEditorProps> = ({
                 fontSize: 11,
                 outline: "none",
                 cursor: "pointer",
+                maxWidth: 145,
+                textOverflow: "ellipsis",
               }}
             >
               <option value="canonical">Original (Oficial SDLC)</option>
@@ -253,16 +357,42 @@ export const InputEditor: React.FC<InputEditorProps> = ({
               )}
               <option value="__create_new__">➕ Criar Novo Agente / Salvar Versão...</option>
             </select>
+
+            {/* Botão de Editar Agente Personalizado quando uma versão salva estiver ativa */}
+            {activeProfile !== "canonical" &&
+              activeProfile !== "active" &&
+              savedAgentVersions.some((v) => v.id === activeProfile) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    if (onEditAgentVersion) {
+                      onEditAgentVersion(activeProfile);
+                    } else if (onOpenConfig) {
+                      onOpenConfig();
+                    }
+                  }}
+                  className="h-6 text-[11px] px-2 text-cyan-400 hover:text-cyan-300 hover:bg-cyan-950/40 border border-cyan-800/50 gap-1 font-medium"
+                  title="Editar este agente personalizado sem precisar criar um novo"
+                >
+                  <Edit3 size={11} />
+                  <span>Editar Agente</span>
+                </Button>
+              )}
           </div>
 
-          {/* Preset Select */}
-          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          {/* Seletor Unificado de Cenários (Presets Padrão + Cenários Salvos) */}
+          <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
             <span style={{ fontSize: 10, fontWeight: 700, color: "var(--text-subtle)", textTransform: "uppercase" }}>
-              Preset:
+              Cenário:
             </span>
             <select
-              onChange={(e) => handleSelectPreset(e.target.value)}
-              defaultValue=""
+              value={selectedScenarioKey}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSelectedScenarioKey(val);
+                handleSelectScenario(val);
+              }}
               style={{
                 background: "var(--bg-surface-stage)",
                 color: "var(--text-main)",
@@ -272,94 +402,156 @@ export const InputEditor: React.FC<InputEditorProps> = ({
                 fontSize: 11,
                 outline: "none",
                 cursor: "pointer",
+                maxWidth: 165,
+                textOverflow: "ellipsis",
               }}
+              title="Carregar um cenário de teste padrão (preset) ou cenário personalizado salvo"
             >
-              <option value="" disabled>
-                Escolher preset...
-              </option>
-              {agent.presets.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.title}
-                </option>
-              ))}
+              <option value="">Escolher cenário...</option>
+              {inputJson.trim() !== "" && (
+                <option value="__clear__">🧹 Limpar (Entrada Vazia)</option>
+              )}
+              {agent.presets && agent.presets.length > 0 && (
+                <optgroup label="Cenários Padrão (Presets)">
+                  {agent.presets.map((p) => (
+                    <option key={p.id} value={`preset:${p.id}`}>
+                      {p.title}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {savedScenarios.length > 0 && (
+                <optgroup label="Cenários Salvos (Personalizados)">
+                  {savedScenarios.map((s) => (
+                    <option key={s.id} value={`saved:${s.id}`}>
+                      {s.title}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </div>
-
-          {/* Saved Scenarios Select */}
-          {savedScenarios.length > 0 && (
-            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-              <span style={{ fontSize: 10, fontWeight: 700, color: "var(--text-subtle)", textTransform: "uppercase" }}>
-                Salvos:
-              </span>
-              <select
-                onChange={(e) => {
-                  const scn = savedScenarios.find((s) => s.id === e.target.value);
-                  if (scn) onLoadScenario(scn);
-                }}
-                defaultValue=""
-                style={{
-                  background: "var(--bg-surface-stage)",
-                  color: "var(--text-main)",
-                  border: "1px solid var(--border-subtle)",
-                  borderRadius: "var(--radius-sm)",
-                  padding: "3px 6px",
-                  fontSize: 11,
-                  outline: "none",
-                  cursor: "pointer",
-                }}
-              >
-                <option value="" disabled>
-                  Cenários ({savedScenarios.length})...
-                </option>
-                {savedScenarios.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.title}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
 
           <Button
             variant="ghost"
             size="sm"
             onClick={onOpenSaveModal}
-            className="h-7 px-2 text-xs text-zinc-400 hover:text-zinc-200"
+            className="h-6 px-2 text-[11px] text-zinc-400 hover:text-zinc-200"
             title="Salvar entrada atual e configurações como um Cenário de Teste (JSON)"
           >
-            <BookmarkPlus className="h-3.5 w-3.5 mr-1" />
+            <BookmarkPlus className="h-3 w-3 mr-1 text-emerald-400" />
             <span>Salvar Cenário</span>
           </Button>
         </div>
+
+        {/* Ação à Direita: Botão Ampliar / Restaurar em Pop-up (Fixado no topo direito) */}
+        {onToggleMaximize && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, alignSelf: "flex-start" }}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onToggleMaximize}
+              className={`h-7 px-2.5 text-xs gap-1.5 transition-all ${
+                isMaximized
+                  ? "border-cyan-500/50 bg-cyan-950/40 text-cyan-300 hover:bg-cyan-900/40"
+                  : "border-zinc-800 bg-zinc-900/70 text-zinc-300 hover:text-white hover:border-zinc-700"
+              }`}
+              title={
+                isMaximized
+                  ? "Restaurar tamanho normal do editor (Esc)"
+                  : "Ampliar editor de entrada em um pop-up maior para melhor visualização e edição"
+              }
+            >
+              {isMaximized ? (
+                <>
+                  <Minimize2 size={12} className="text-cyan-400" />
+                  <span>Restaurar</span>
+                </>
+              ) : (
+                <>
+                  <Maximize2 size={12} className="text-cyan-400" />
+                  <span>Ampliar</span>
+                </>
+              )}
+            </Button>
+            {isMaximized && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onToggleMaximize}
+                className="h-7 w-7 rounded-full text-zinc-400 hover:text-white"
+                title="Fechar pop-up ampliado (Esc)"
+              >
+                <X size={14} />
+              </Button>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* ── BARRA DE COMPARAÇÃO A/B FLEXÍVEL ───────────────────────── */}
+      {/* ── BARRA DE COMPARAÇÃO A/B FLEXÍVEL (Sempre em linha única) ── */}
       <div
         style={{
           padding: "6px 14px",
           display: "flex",
           alignItems: "center",
-          justifyContent: "space-between",
+          gap: 8,
           borderBottom: "1px solid var(--border-subtle)",
           background: "var(--bg-surface-stage)",
-          flexWrap: "wrap",
-          gap: 8,
+          flexWrap: "nowrap",
+          minWidth: 0,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 4, marginRight: 2 }}>
-            <ArrowLeftRight size={12} className="text-zinc-400" />
-            <span style={{ fontSize: 10, fontWeight: 700, color: "var(--text-subtle)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-              Comparação A/B:
-            </span>
-          </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
+          <ArrowLeftRight size={12} className="text-cyan-400" />
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              color: "var(--text-subtle)",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Comparação A/B:
+          </span>
+        </div>
 
-          {/* Seletor Lado A */}
+        {/* Lado A */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+            flex: "1 1 0",
+            minWidth: 0,
+          }}
+        >
+          <span
+            style={{
+              fontSize: 9,
+              fontWeight: 800,
+              padding: "1px 5px",
+              borderRadius: 3,
+              background: "rgba(56, 189, 248, 0.15)",
+              color: "#38bdf8",
+              border: "1px solid rgba(56, 189, 248, 0.35)",
+              flexShrink: 0,
+              fontFamily: "var(--font-mono)",
+            }}
+            title="Lado A (Base de Comparação)"
+          >
+            A
+          </span>
           <select
             value={sideAId}
             onChange={(e) => setSideAId(e.target.value)}
             style={{
-              background: "rgba(15, 23, 42, 0.6)",
+              flex: 1,
+              minWidth: 0,
+              width: "100%",
+              background: "rgba(15, 23, 42, 0.7)",
               color: "#38bdf8",
               border: "1px solid rgba(56, 189, 248, 0.3)",
               borderRadius: "var(--radius-sm)",
@@ -368,43 +560,75 @@ export const InputEditor: React.FC<InputEditorProps> = ({
               fontWeight: 600,
               outline: "none",
               cursor: "pointer",
+              textOverflow: "ellipsis",
             }}
             title="Escolha a versão do agente para o Lado A (Base de Comparação)"
           >
-            <option value="canonical">Lado A: Original (Oficial SDLC)</option>
-            <option value="active">Lado A: Config Atual (Personalizada)</option>
+            <option value="canonical">Original (Oficial SDLC)</option>
+            <option value="active">Config Atual (Personalizada)</option>
             {savedAgentVersions.map((v) => (
               <option key={v.id} value={v.id}>
-                Lado A: {v.name}
+                {v.name}
               </option>
             ))}
           </select>
+        </div>
 
-          {/* Botão Swap A ⟷ B */}
-          <button
-            onClick={handleSwapSides}
+        {/* Botão Swap A ⟷ B */}
+        <button
+          onClick={handleSwapSides}
+          style={{
+            background: "rgba(255, 255, 255, 0.04)",
+            border: "1px solid var(--border-subtle)",
+            color: "var(--text-muted)",
+            cursor: "pointer",
+            padding: "3px 6px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            borderRadius: "var(--radius-sm)",
+            flexShrink: 0,
+            transition: "all 0.15s ease",
+          }}
+          title="Inverter Lado A ⟷ Lado B"
+        >
+          <ArrowLeftRight size={11} className="hover:text-white transition-colors" />
+        </button>
+
+        {/* Lado B */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+            flex: "1 1 0",
+            minWidth: 0,
+          }}
+        >
+          <span
             style={{
-              background: "transparent",
-              border: "none",
-              color: "var(--text-muted)",
-              cursor: "pointer",
-              padding: "2px 4px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              borderRadius: "var(--radius-sm)",
+              fontSize: 9,
+              fontWeight: 800,
+              padding: "1px 5px",
+              borderRadius: 3,
+              background: "rgba(52, 211, 153, 0.15)",
+              color: "#34d399",
+              border: "1px solid rgba(52, 211, 153, 0.35)",
+              flexShrink: 0,
+              fontFamily: "var(--font-mono)",
             }}
-            title="Inverter Lado A e Lado B"
+            title="Lado B (Candidato de Teste)"
           >
-            <ArrowLeftRight size={12} className="hover:text-white transition-colors" />
-          </button>
-
-          {/* Seletor Lado B */}
+            B
+          </span>
           <select
             value={sideBId}
             onChange={(e) => setSideBId(e.target.value)}
             style={{
-              background: "rgba(15, 23, 42, 0.6)",
+              flex: 1,
+              minWidth: 0,
+              width: "100%",
+              background: "rgba(15, 23, 42, 0.7)",
               color: "#34d399",
               border: "1px solid rgba(52, 211, 153, 0.3)",
               borderRadius: "var(--radius-sm)",
@@ -413,23 +637,18 @@ export const InputEditor: React.FC<InputEditorProps> = ({
               fontWeight: 600,
               outline: "none",
               cursor: "pointer",
+              textOverflow: "ellipsis",
             }}
             title="Escolha a versão do agente para o Lado B (Candidato de Teste)"
           >
-            <option value="active">Lado B: Config Atual (Personalizada)</option>
-            <option value="canonical">Lado B: Original (Oficial SDLC)</option>
+            <option value="active">Config Atual (Personalizada)</option>
+            <option value="canonical">Original (Oficial SDLC)</option>
             {savedAgentVersions.map((v) => (
               <option key={v.id} value={v.id}>
-                Lado B: {v.name}
+                {v.name}
               </option>
             ))}
           </select>
-        </div>
-
-        {/* Info de Linhas e Chars */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 11, color: "var(--text-subtle)", fontFamily: "var(--font-mono)" }}>
-          <span>{lineCount} linhas</span>
-          <span>{inputJson.length} chars</span>
         </div>
       </div>
 
@@ -453,9 +672,10 @@ export const InputEditor: React.FC<InputEditorProps> = ({
             INPUT SPEC (Payload de Entrada JSON)
           </span>
         </div>
-        <span style={{ fontSize: 10, color: "var(--text-subtle)" }}>
-          Edite a entrada do teste isolado ou comparação
-        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 11, color: "var(--text-subtle)", fontFamily: "var(--font-mono)" }}>
+          <span>{lineCount} linhas</span>
+          <span>{localInput.length} chars</span>
+        </div>
       </div>
 
       {/* ── EDITOR BODY: 100% focado no input.json ───────────────────── */}
@@ -470,9 +690,20 @@ export const InputEditor: React.FC<InputEditorProps> = ({
         className={isShaking ? "shake-error" : ""}
       >
         <textarea
-          value={inputJson}
-          onChange={(e) => onInputChange(e.target.value)}
-          placeholder="{\n  // Cole ou digite o JSON de entrada para o agente...\n}"
+          value={localInput}
+          onChange={handleTextareaChange}
+          onBlur={() => flushInput(localInput)}
+          onKeyDown={(e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+              e.preventDefault();
+              if (e.shiftKey) {
+                handleExecuteAB();
+              } else {
+                handleRunClick();
+              }
+            }
+          }}
+          placeholder={`{\n  // Cole ou digite o JSON de entrada para o agente, ou escolha um cenário acima...\n}`}
           className="code-editor"
           spellCheck={false}
           style={{
@@ -537,7 +768,7 @@ export const InputEditor: React.FC<InputEditorProps> = ({
           <Button
             variant="outline"
             size="sm"
-            onClick={onValidate}
+            onClick={handleValidateClick}
             className="h-7 px-2.5 text-xs text-zinc-300 border-zinc-800 hover:border-zinc-700 bg-zinc-900/60"
             title="Validar JSON contra o inputSchema Zod do agente"
           >
@@ -584,7 +815,7 @@ export const InputEditor: React.FC<InputEditorProps> = ({
           {/* Botão de Execução Simples */}
           <Button
             size="sm"
-            onClick={onRun}
+            onClick={handleRunClick}
             disabled={isRunning || isRunningAB}
             className="h-7 gap-1.5 px-3 text-xs font-semibold bg-zinc-100 text-zinc-900 hover:bg-white"
             title="Executar o agente com a entrada e configuração ativa (Ctrl+Enter)"
@@ -600,3 +831,5 @@ export const InputEditor: React.FC<InputEditorProps> = ({
     </div>
   );
 };
+
+export const InputEditor = React.memo(InputEditorComponent);

@@ -98,8 +98,7 @@ export const ExperimentDetailModal: React.FC<ExperimentDetailModalProps> = ({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: "rgba(0, 0, 0, 0.75)",
-        backdropFilter: "blur(6px)",
+        backgroundColor: "rgba(5, 5, 8, 0.88)",
         padding: 20,
       }}
       onClick={onClose}

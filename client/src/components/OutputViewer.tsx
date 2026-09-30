@@ -14,6 +14,11 @@ import {
   Zap,
   Sparkles,
   Scale,
+  Maximize2,
+  Minimize2,
+  X,
+  ShieldCheck,
+  Cpu,
 } from "lucide-react";
 import { AgentExecutionResult, ABExecutionResult } from "../types.js";
 import { ArchitecturePanel } from "./StructuredPanels/ArchitecturePanel.js";
@@ -36,6 +41,8 @@ interface OutputViewerProps {
   expectedJson: string;
   isRunning: boolean;
   onPromoteV2?: (output: unknown) => void;
+  isMaximized?: boolean;
+  onToggleMaximize?: () => void;
 }
 
 const THINKING_STEPS = [
@@ -46,7 +53,7 @@ const THINKING_STEPS = [
   "Calculando métricas de latência e diff semântico...",
 ];
 
-export const OutputViewer: React.FC<OutputViewerProps> = ({
+const OutputViewerComponent: React.FC<OutputViewerProps> = ({
   result,
   abResult,
   agentName,
@@ -54,9 +61,11 @@ export const OutputViewer: React.FC<OutputViewerProps> = ({
   expectedJson,
   isRunning,
   onPromoteV2,
+  isMaximized = false,
+  onToggleMaximize,
 }) => {
   const [activeTab, setActiveTab] = useState<
-    "ab" | "panel" | "diff" | "json" | "markdown" | "metrics"
+    "ab" | "panel" | "json" | "markdown" | "audit"
   >(abResult ? "ab" : "panel");
   const [panelViewMode, setPanelViewMode] = useState<"output" | "input">("output");
   const [copied, setCopied] = useState(false);
@@ -197,8 +206,40 @@ export const OutputViewer: React.FC<OutputViewerProps> = ({
           padding: 32,
           textAlign: "center",
           background: "var(--bg-surface)",
+          position: "relative",
         }}
       >
+        {onToggleMaximize && (
+          <div style={{ position: "absolute", top: 12, right: 14 }}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onToggleMaximize}
+              className={`h-7 px-2.5 text-xs gap-1.5 transition-all ${
+                isMaximized
+                  ? "border-cyan-500/50 bg-cyan-950/40 text-cyan-300 hover:bg-cyan-900/40"
+                  : "border-zinc-800 bg-zinc-900/70 text-zinc-300 hover:text-white hover:border-zinc-700"
+              }`}
+              title={
+                isMaximized
+                  ? "Restaurar tamanho normal (Esc)"
+                  : "Ampliar visualizador de saída em um pop-up maior para melhor visualização"
+              }
+            >
+              {isMaximized ? (
+                <>
+                  <Minimize2 size={12} className="text-cyan-400" />
+                  <span>Restaurar</span>
+                </>
+              ) : (
+                <>
+                  <Maximize2 size={12} className="text-cyan-400" />
+                  <span>Ampliar</span>
+                </>
+              )}
+            </Button>
+          </div>
+        )}
         <div
           style={{
             width: 44,
@@ -219,7 +260,7 @@ export const OutputViewer: React.FC<OutputViewerProps> = ({
           Aguardando Execução
         </h4>
         <p style={{ fontSize: 12, color: "var(--text-muted)", maxWidth: 360, marginTop: 4 }}>
-          Selecione um preset ou preencha a entrada à esquerda e clique em <b>Executar</b> (<kbd className="font-mono text-[10px]">Ctrl+↵</kbd>) ou <b>Executar A/B</b> para inspecionar os resultados.
+          Selecione um cenário ou preencha a entrada à esquerda e clique em <b>Executar</b> (<kbd className="font-mono text-[10px]">Ctrl+↵</kbd>) ou <b>Executar A/B</b> para inspecionar os resultados.
         </p>
       </div>
     );
@@ -228,7 +269,33 @@ export const OutputViewer: React.FC<OutputViewerProps> = ({
   // Falha na Execução
   if (effectiveResult && !effectiveResult.success && !abResult) {
     return (
-      <div className="glass-card" style={{ height: "100%", padding: 20, display: "flex", flexDirection: "column" }}>
+      <div className="glass-card" style={{ height: "100%", padding: 20, display: "flex", flexDirection: "column", position: "relative" }}>
+        {onToggleMaximize && (
+          <div style={{ position: "absolute", top: 12, right: 14 }}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onToggleMaximize}
+              className={`h-7 px-2.5 text-xs gap-1.5 transition-all ${
+                isMaximized
+                  ? "border-cyan-500/50 bg-cyan-950/40 text-cyan-300 hover:bg-cyan-900/40"
+                  : "border-zinc-800 bg-zinc-900/70 text-zinc-300 hover:text-white hover:border-zinc-700"
+              }`}
+            >
+              {isMaximized ? (
+                <>
+                  <Minimize2 size={12} className="text-cyan-400" />
+                  <span>Restaurar</span>
+                </>
+              ) : (
+                <>
+                  <Maximize2 size={12} className="text-cyan-400" />
+                  <span>Ampliar</span>
+                </>
+              )}
+            </Button>
+          </div>
+        )}
         <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--accent-rose)", marginBottom: 12 }}>
           <AlertCircle size={18} />
           <h4 style={{ fontSize: 15, fontWeight: 600 }}>Falha na Execução do Agente</h4>
@@ -283,18 +350,18 @@ export const OutputViewer: React.FC<OutputViewerProps> = ({
       {/* Header Tabs: Transitions.dev P16 Sliding Tabs */}
       <div
         style={{
-          padding: "8px 14px",
+          padding: "6px 14px",
           borderBottom: "1px solid var(--border-subtle)",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          flexWrap: "wrap",
+          flexWrap: "nowrap",
           gap: 8,
           background: "var(--bg-surface)",
         }}
       >
         {/* Navigation Tabs */}
-        <div className="p16-tab-container">
+        <div className="p16-tab-container" style={{ flexShrink: 0 }}>
           {abResult && (
             <button
               className={`p16-tab-trigger ${activeTab === "ab" ? "active" : ""}`}
@@ -313,16 +380,6 @@ export const OutputViewer: React.FC<OutputViewerProps> = ({
             <span>Estruturado</span>
           </button>
 
-          {hasExpectedOutput && !abResult && (
-            <button
-              className={`p16-tab-trigger ${activeTab === "diff" ? "active" : ""}`}
-              onClick={() => setActiveTab("diff")}
-            >
-              <FileDiff size={12} className={activeTab === "diff" ? "text-cyan-400" : "text-zinc-500"} />
-              <span>Diff</span>
-            </button>
-          )}
-
           <button
             className={`p16-tab-trigger ${activeTab === "json" ? "active" : ""}`}
             onClick={() => setActiveTab("json")}
@@ -340,101 +397,61 @@ export const OutputViewer: React.FC<OutputViewerProps> = ({
           </button>
 
           <button
-            className={`p16-tab-trigger ${activeTab === "metrics" ? "active" : ""}`}
-            onClick={() => setActiveTab("metrics")}
+            className={`p16-tab-trigger ${activeTab === "audit" ? "active" : ""}`}
+            onClick={() => setActiveTab("audit")}
           >
-            <Activity size={12} className={activeTab === "metrics" ? "text-violet-400" : "text-zinc-500"} />
-            <span>Métricas</span>
+            <ShieldCheck size={12} className={activeTab === "audit" ? "text-violet-400" : "text-zinc-500"} />
+            <span>Auditoria</span>
           </button>
         </div>
 
-        {/* Right Toolbar Actions */}
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {abResult && activeTab !== "ab" && (
-            <div className="p16-tab-container">
-              <button
-                onClick={() => setAbSelectedView("canonical")}
-                className={`p16-tab-trigger ${abSelectedView === "canonical" ? "active" : ""}`}
-                style={{ padding: "3px 8px", fontSize: 11 }}
-              >
-                Oficial
-              </button>
-              <button
-                onClick={() => setAbSelectedView("custom")}
-                className={`p16-tab-trigger ${abSelectedView === "custom" ? "active" : ""}`}
-                style={{ padding: "3px 8px", fontSize: 11 }}
-              >
-                {abResult?.versionBName || "Personalizado"}
-              </button>
-            </div>
-          )}
-
-          {/* Adotar Saída como Referência */}
-          {abResult && onPromoteV2 && abResult.customResult?.output && (
+        {/* Botão Ampliar / Restaurar em Pop-up Maior (Fixado no canto superior direito - Local circulado) */}
+        {onToggleMaximize && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
             <Button
               variant="outline"
               size="sm"
-              onClick={() => onPromoteV2(abResult.customResult.output)}
-              title="Definir a saída desta versão como a Saída Esperada (Referência) no editor de testes"
-              className="h-7 px-2.5 text-xs text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10 gap-1.5"
-            >
-              <Check className="h-3 w-3 text-emerald-400" />
-              <span>Adotar como Referência</span>
-            </Button>
-          )}
-
-          {/* Copy Action */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleCopyJson}
-            className="h-7 px-2 text-xs text-zinc-400 hover:text-zinc-200"
-            title="Copiar JSON de saída para área de transferência"
-          >
-            {copied ? <Check size={12} className="text-emerald-400 mr-1" /> : <Copy size={12} className="mr-1" />}
-            <span>{copied ? "Copiado!" : "Copiar"}</span>
-          </Button>
-
-          {/* Download JSON */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() =>
-              handleDownload(
-                `${agentName.toLowerCase()}-output.json`,
-                JSON.stringify(effectiveResult?.output || {}, null, 2),
-                "application/json"
-              )
-            }
-            className="h-7 px-2 text-xs text-zinc-400 hover:text-zinc-200"
-            title="Baixar JSON de saída"
-          >
-            <Download size={12} className="mr-1" />
-            <span>JSON</span>
-          </Button>
-
-          {effectiveResult?.markdownRepresentation && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() =>
-                handleDownload(
-                  `${agentName.toLowerCase()}-artifact.md`,
-                  effectiveResult.markdownRepresentation || "",
-                  "text/markdown"
-                )
+              onClick={onToggleMaximize}
+              className={`h-7 px-2.5 text-xs gap-1.5 transition-all ${
+                isMaximized
+                  ? "border-cyan-500/50 bg-cyan-950/40 text-cyan-300 hover:bg-cyan-900/40"
+                  : "border-zinc-800 bg-zinc-900/70 text-zinc-300 hover:text-white hover:border-zinc-700"
+              }`}
+              title={
+                isMaximized
+                  ? "Restaurar tamanho normal (Esc)"
+                  : "Ampliar visualizador de saída em um pop-up maior para melhor visualização"
               }
-              className="h-7 px-2 text-xs text-zinc-400 hover:text-zinc-200"
-              title="Baixar Markdown gerado"
             >
-              <Download size={12} className="mr-1" />
-              <span>.MD</span>
+              {isMaximized ? (
+                <>
+                  <Minimize2 size={12} className="text-cyan-400" />
+                  <span>Restaurar</span>
+                </>
+              ) : (
+                <>
+                  <Maximize2 size={12} className="text-cyan-400" />
+                  <span>Ampliar</span>
+                </>
+              )}
             </Button>
-          )}
-        </div>
+
+            {isMaximized && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onToggleMaximize}
+                className="h-7 w-7 rounded-full text-zinc-400 hover:text-white"
+                title="Fechar pop-up ampliado (Esc)"
+              >
+                <X size={14} />
+              </Button>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Metrics Mini-Bar with Transitions.dev P10 Pop Check */}
+      {/* Metrics & Actions Bar */}
       {effectiveResult && (
         <div
           style={{
@@ -443,50 +460,166 @@ export const OutputViewer: React.FC<OutputViewerProps> = ({
             borderBottom: "1px solid var(--border-subtle)",
             display: "flex",
             alignItems: "center",
-            gap: 16,
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: 12,
             fontSize: 11,
             color: "var(--text-subtle)",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-            <Clock size={12} />
-            <span>
-              Latência: <b style={{ color: "var(--text-main)", fontFamily: "var(--font-mono)" }}>{effectiveResult.elapsedMs}ms</b>
-            </span>
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-            {effectiveResult.modeUsed === "fallback" ? (
-              <Zap size={12} className="text-amber-400" />
-            ) : (
-              <Sparkles size={12} className="text-indigo-400" />
-            )}
-            <span>
-              Modo:{" "}
-              <b style={{ color: "var(--text-main)" }}>
-                {effectiveResult.modeUsed === "fallback" ? "Offline (Mock)" : "LLM Real"}
-              </b>
-            </span>
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-            <CheckCircle2
-              size={12}
-              className={effectiveResult.outputValid ? "text-emerald-400 p10-success-icon" : "text-rose-400"}
-            />
-            <span>
-              Schema Zod:{" "}
-              <b style={{ color: effectiveResult.outputValid ? "var(--accent-emerald)" : "var(--accent-rose)" }}>
-                {effectiveResult.outputValid ? "Validado" : "Inválido"}
-              </b>
-            </span>
-          </div>
-
-          {abResult && (
-            <div style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-muted)" }}>
-              Exibindo: <b style={{ color: abSelectedView === "custom" ? "var(--accent-emerald)" : "var(--accent-cyan)" }}>{abSelectedView === "custom" ? (abResult.versionBName || "Personalizado") : (abResult.versionAName || "Canônica")}</b>
+          {/* Métricas Principais (Esquerda) */}
+          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <Clock size={12} />
+              <span>
+                Latência: <b style={{ color: "var(--text-main)", fontFamily: "var(--font-mono)" }}>{effectiveResult.elapsedMs}ms</b>
+              </span>
             </div>
-          )}
+
+            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              {effectiveResult.modeUsed === "fallback" ? (
+                <Zap size={12} className="text-amber-400" />
+              ) : (
+                <Sparkles size={12} className="text-indigo-400" />
+              )}
+              <span>
+                Modo:{" "}
+                <b style={{ color: "var(--text-main)" }}>
+                  {effectiveResult.modeUsed === "fallback" ? "Offline (Mock)" : "LLM Real"}
+                </b>
+              </span>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <CheckCircle2
+                size={12}
+                className={effectiveResult.outputValid ? "text-emerald-400 p10-success-icon" : "text-rose-400"}
+              />
+              <span>
+                Schema Zod:{" "}
+                <b style={{ color: effectiveResult.outputValid ? "var(--accent-emerald)" : "var(--accent-rose)" }}>
+                  {effectiveResult.outputValid ? "Validado" : "Inválido"}
+                </b>
+              </span>
+            </div>
+
+            {/* Métricas Reais de Payload e Tokens */}
+            {effectiveResult?.output && (() => {
+              const outputJsonStr = JSON.stringify(effectiveResult.output);
+              const outputChars = outputJsonStr.length;
+              const outputKb = (outputChars / 1024).toFixed(1);
+              const estimatedTokens = Math.round(outputChars / 4);
+              return (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                    <FileCode2 size={12} className="text-cyan-400" />
+                    <span>
+                      Saída: <b style={{ color: "var(--text-main)", fontFamily: "var(--font-mono)" }}>{outputKb} KB</b>
+                      <span style={{ opacity: 0.6, marginLeft: 3 }}>({outputChars} chars)</span>
+                    </span>
+                  </div>
+
+                  <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                    <Cpu size={12} className="text-violet-400" />
+                    <span>
+                      Tokens Est.: <b style={{ color: "var(--text-main)", fontFamily: "var(--font-mono)" }}>~{estimatedTokens}</b>
+                    </span>
+                  </div>
+                </>
+              );
+            })()}
+
+            {abResult && (
+              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                Exibindo: <b style={{ color: abSelectedView === "custom" ? "var(--accent-emerald)" : "var(--accent-cyan)" }}>{abSelectedView === "custom" ? (abResult.versionBName || "Personalizado") : (abResult.versionAName || "Canônica")}</b>
+              </div>
+            )}
+          </div>
+
+          {/* Ações de Exportação e Referência (Direita) */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: "auto", flexWrap: "wrap" }}>
+            {abResult && activeTab !== "ab" && (
+              <div className="p16-tab-container">
+                <button
+                  onClick={() => setAbSelectedView("canonical")}
+                  className={`p16-tab-trigger ${abSelectedView === "canonical" ? "active" : ""}`}
+                  style={{ padding: "2px 7px", fontSize: 11 }}
+                >
+                  Oficial
+                </button>
+                <button
+                  onClick={() => setAbSelectedView("custom")}
+                  className={`p16-tab-trigger ${abSelectedView === "custom" ? "active" : ""}`}
+                  style={{ padding: "2px 7px", fontSize: 11 }}
+                >
+                  {abResult?.versionBName || "Personalizado"}
+                </button>
+              </div>
+            )}
+
+            {/* Adotar Saída como Referência */}
+            {abResult && onPromoteV2 && abResult.customResult?.output && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onPromoteV2(abResult.customResult.output)}
+                title="Definir a saída desta versão como a Saída Esperada (Referência) no editor de testes"
+                className="h-6 px-2 text-[11px] text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10 gap-1.5"
+              >
+                <Check className="h-3 w-3 text-emerald-400" />
+                <span>Adotar como Referência</span>
+              </Button>
+            )}
+
+            {/* Copy Action */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleCopyJson}
+              className="h-6 px-2 text-[11px] text-zinc-400 hover:text-zinc-200"
+              title="Copiar JSON de saída para área de transferência"
+            >
+              {copied ? <Check size={11} className="text-emerald-400 mr-1" /> : <Copy size={11} className="mr-1" />}
+              <span>{copied ? "Copiado!" : "Copiar"}</span>
+            </Button>
+
+            {/* Download JSON */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                handleDownload(
+                  `${agentName.toLowerCase()}-output.json`,
+                  JSON.stringify(effectiveResult?.output || {}, null, 2),
+                  "application/json"
+                )
+              }
+              className="h-6 px-2 text-[11px] text-zinc-400 hover:text-zinc-200"
+              title="Baixar JSON de saída"
+            >
+              <Download size={11} className="mr-1" />
+              <span>JSON</span>
+            </Button>
+
+            {effectiveResult?.markdownRepresentation && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() =>
+                  handleDownload(
+                    `${agentName.toLowerCase()}-artifact.md`,
+                    effectiveResult.markdownRepresentation || "",
+                    "text/markdown"
+                  )
+                }
+                className="h-6 px-2 text-[11px] text-zinc-400 hover:text-zinc-200"
+                title="Baixar Markdown gerado"
+              >
+                <Download size={11} className="mr-1" />
+                <span>.MD</span>
+              </Button>
+            )}
+          </div>
         </div>
       )}
 
@@ -550,10 +683,6 @@ export const OutputViewer: React.FC<OutputViewerProps> = ({
           </div>
         )}
 
-        {activeTab === "diff" && hasExpectedOutput && !abResult && (
-          <DiffViewer actual={effectiveResult?.output} expected={JSON.parse(expectedJson || "{}")} />
-        )}
-
         {activeTab === "json" && (
           <pre
             style={{
@@ -593,33 +722,63 @@ export const OutputViewer: React.FC<OutputViewerProps> = ({
           </pre>
         )}
 
-        {activeTab === "metrics" && (
+        {activeTab === "audit" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <h4 style={{ fontSize: 11, fontWeight: 700, color: "var(--text-subtle)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-              Eventos de Auditoria Emitidos ({effectiveResult?.auditEvents?.length || 0})
-            </h4>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {effectiveResult?.auditEvents?.map((ev, i) => (
-                <div key={i} className="glass-card" style={{ padding: "10px 12px" }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "var(--accent-indigo)" }}>
-                      {ev.type}
-                    </span>
-                    <span style={{ fontSize: 10, color: "var(--text-subtle)", fontFamily: "var(--font-mono)" }}>
-                      {ev.timestamp}
-                    </span>
-                  </div>
-                  {ev.payload && (
-                    <pre style={{ margin: 0, fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--text-muted)", overflowX: "auto" }}>
-                      {JSON.stringify(ev.payload, null, 2)}
-                    </pre>
-                  )}
-                </div>
-              ))}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <h4 style={{ fontSize: 11, fontWeight: 700, color: "var(--text-subtle)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                Trilha de Auditoria & Governança ({effectiveResult?.auditEvents?.length || 0} eventos)
+              </h4>
+              <span style={{ fontSize: 11, color: "var(--text-subtle)", fontFamily: "var(--font-mono)" }}>
+                Rastreabilidade de Ciclo de Vida SDLC
+              </span>
             </div>
+
+            {(!effectiveResult?.auditEvents || effectiveResult.auditEvents.length === 0) ? (
+              <div
+                style={{
+                  padding: "36px 20px",
+                  textAlign: "center",
+                  background: "var(--bg-surface-stage)",
+                  border: "1px dashed var(--border-subtle)",
+                  borderRadius: "var(--radius-sm)",
+                  color: "var(--text-muted)",
+                  fontSize: 12,
+                }}
+              >
+                <ShieldCheck size={28} className="text-zinc-600" style={{ margin: "0 auto 8px auto", opacity: 0.6 }} />
+                <p style={{ margin: 0, fontWeight: 500, color: "var(--text-main)" }}>
+                  Nenhum evento de auditoria emitido nesta execução
+                </p>
+                <p style={{ margin: "4px 0 0 0", fontSize: 11, color: "var(--text-subtle)" }}>
+                  Eventos de conformidade e checkpoints emitidos pelo runner do agente aparecerão aqui.
+                </p>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {effectiveResult.auditEvents.map((ev, i) => (
+                  <div key={i} className="glass-card" style={{ padding: "10px 12px" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                      <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, color: "var(--accent-indigo)" }}>
+                        {ev.type}
+                      </span>
+                      <span style={{ fontSize: 10, color: "var(--text-subtle)", fontFamily: "var(--font-mono)" }}>
+                        {ev.timestamp}
+                      </span>
+                    </div>
+                    {ev.payload && (
+                      <pre style={{ margin: 0, fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--text-muted)", overflowX: "auto" }}>
+                        {JSON.stringify(ev.payload, null, 2)}
+                      </pre>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
     </div>
   );
 };
+
+export const OutputViewer = React.memo(OutputViewerComponent);

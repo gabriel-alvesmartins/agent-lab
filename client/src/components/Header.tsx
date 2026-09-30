@@ -16,7 +16,7 @@ interface HeaderProps {
   onOpenCreateAgent?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({
+const HeaderComponent: React.FC<HeaderProps> = ({
   mode,
   onModeChange,
   selectedModel,
@@ -83,18 +83,18 @@ export const Header: React.FC<HeaderProps> = ({
             title="Criar novo agente personalizado a partir de qualquer um dos 15 agentes SDLC"
           >
             <Plus className="h-3 w-3 text-cyan-400" />
-            <span>+ Novo Agente</span>
+            <span>Novo Agente</span>
           </Button>
         )}
 
-        {/* Biblioteca de Agentes & Presets Action */}
+        {/* Biblioteca de Agentes & Cenários Action */}
         {onOpenLibrary && (
           <Button
             variant="outline"
             size="sm"
             onClick={() => onOpenLibrary("agents")}
             className="h-7 gap-1.5 px-2 text-xs text-indigo-300 border-indigo-900/60 hover:border-indigo-700 bg-indigo-950/25"
-            title="Abrir biblioteca de agentes cadastrados, esquemas, prompts e presets"
+            title="Abrir biblioteca de agentes cadastrados, esquemas, prompts e cenários de teste"
           >
             <Layers className="h-3 w-3 text-indigo-400" />
             <span>Biblioteca</span>
@@ -211,3 +211,5 @@ export const Header: React.FC<HeaderProps> = ({
     </header>
   );
 };
+
+export const Header = React.memo(HeaderComponent);

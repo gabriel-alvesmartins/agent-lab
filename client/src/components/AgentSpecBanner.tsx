@@ -7,14 +7,24 @@ interface AgentSpecBannerProps {
   agent: AgentDetail;
   onOpenConfig?: () => void;
   isConfigModified?: boolean;
+  activeVersionName?: string;
 }
 
-export const AgentSpecBanner: React.FC<AgentSpecBannerProps> = ({
+const AgentSpecBannerComponent: React.FC<AgentSpecBannerProps> = ({
   agent,
   onOpenConfig,
   isConfigModified,
+  activeVersionName,
 }) => {
   const [showSchema, setShowSchema] = useState(false);
+
+  const displayVersion =
+    activeVersionName ||
+    (agent.version
+      ? `v${agent.version} (Oficial)`
+      : isConfigModified
+      ? "v1.0.0 (Personalizada)"
+      : "v1.0.0 (Oficial)");
 
   return (
     <div
@@ -34,6 +44,44 @@ export const AgentSpecBanner: React.FC<AgentSpecBannerProps> = ({
             <h2 style={{ fontSize: 16, fontWeight: 700, letterSpacing: "-0.01em", color: "var(--text-main)" }}>
               {agent.name}
             </h2>
+
+            {/* Tag indicando a versão do agente em uso */}
+            <span
+              style={{
+                fontSize: 10,
+                fontFamily: "var(--font-mono)",
+                fontWeight: 600,
+                padding: "2px 7px",
+                borderRadius: "var(--radius-sm, 4px)",
+                background: isConfigModified
+                  ? "rgba(245, 158, 11, 0.12)"
+                  : "rgba(16, 185, 129, 0.12)",
+                color: isConfigModified
+                  ? "var(--accent-amber, #f59e0b)"
+                  : "var(--accent-emerald, #10b981)",
+                border: isConfigModified
+                  ? "1px solid rgba(245, 158, 11, 0.35)"
+                  : "1px solid rgba(16, 185, 129, 0.35)",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5.5,
+              }}
+              title={`Versão ativa do agente: ${displayVersion}`}
+            >
+              <span
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  backgroundColor: isConfigModified ? "#f59e0b" : "#10b981",
+                  boxShadow: isConfigModified
+                    ? "0 0 6px rgba(245, 158, 11, 0.5)"
+                    : "0 0 6px rgba(16, 185, 129, 0.5)",
+                }}
+              />
+              <span>{displayVersion}</span>
+            </span>
+
             <Badge variant="outline" size="xs" className="border-zinc-700 text-zinc-400">
               {agent.phaseName}
             </Badge>
@@ -230,3 +278,5 @@ export const AgentSpecBanner: React.FC<AgentSpecBannerProps> = ({
     </div>
   );
 };
+
+export const AgentSpecBanner = React.memo(AgentSpecBannerComponent);

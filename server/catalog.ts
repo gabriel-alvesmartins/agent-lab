@@ -1,6 +1,7 @@
 export interface AgentMetadata {
   id: string;
   name: string;
+  version?: string;
   phase: number;
   phaseName: string;
   category: string;

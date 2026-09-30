@@ -27,6 +27,7 @@ import {
   Zap,
   Wrench,
   Eye,
+  Edit3,
 } from "lucide-react";
 import {
   AgentDetail,
@@ -43,10 +44,13 @@ import {
   deleteScenario,
   loadSavedAgentVersions,
   saveAgentVersion,
+  updateAgentVersion,
   deleteAgentVersion,
 } from "../lib/storage.js";
 import { Button } from "./ui/button.js";
 import { Badge } from "./ui/badge.js";
+import { ConfirmModal } from "./ConfirmModal.js";
+import { ScenarioModal } from "./ScenarioModal.js";
 
 interface SavedAssetsDrawerProps {
   isOpen: boolean;
@@ -55,6 +59,8 @@ interface SavedAssetsDrawerProps {
   agents: AgentSummary[];
   initialTab?: "agents" | "presets";
   initialOpenCreateModal?: boolean;
+  initialEditVersion?: SavedAgentVersion | null;
+  onInitialEditVersionConsumed?: () => void;
   onCreateModalClose?: () => void;
   onApplyPresetToWorkbench: (preset: {
     agentId: string;
@@ -74,6 +80,8 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
   agents,
   initialTab = "agents",
   initialOpenCreateModal = false,
+  initialEditVersion = null,
+  onInitialEditVersionConsumed,
   onCreateModalClose,
   onApplyPresetToWorkbench,
   onApplyVersionToWorkbench,
@@ -96,8 +104,9 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
   const [loadingAgentDetail, setLoadingAgentDetail] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
-  // Estados para Criação de Novo Agente Personalizado
+  // Estados para Criação / Edição de Agente Personalizado
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [editingAgentVersionId, setEditingAgentVersionId] = useState<string | null>(null);
   const [createBaseAgentId, setCreateBaseAgentId] = useState<string>(currentAgentId || "SolutionArchitect");
   const [createAgentName, setCreateAgentName] = useState<string>("");
   const [createPrompt, setCreatePrompt] = useState<string>("");
@@ -110,6 +119,23 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
   const [createMode, setCreateMode] = useState<"standard" | "thorough" | "fast">("standard");
   const [createAvailableTools, setCreateAvailableTools] = useState<string[]>([]);
   const [createEnabledTools, setCreateEnabledTools] = useState<string[]>([]);
+
+  // Modal de Confirmação In-App (substitui window.confirm do navegador)
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    description: string;
+    confirmText?: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: "",
+    description: "",
+    onConfirm: () => {},
+  });
+
+  // Modal para salvar novo cenário (substitui window.prompt do navegador)
+  const [isNewScenarioModalOpen, setIsNewScenarioModalOpen] = useState(false);
 
   // Estados da Aba de Presets & Cenários
   const [savedScenarios, setSavedScenarios] = useState<SavedScenario[]>([]);
@@ -132,6 +158,7 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
 
   const handleCloseCreateModal = () => {
     setIsCreateModalOpen(false);
+    setEditingAgentVersionId(null);
     if (onCreateModalClose) onCreateModalClose();
   };
 
@@ -140,11 +167,14 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
     if (isOpen) {
       setActiveTab(initialTab);
       refreshData();
-      if (initialOpenCreateModal) {
+      if (initialEditVersion) {
+        handleOpenEditModal(initialEditVersion);
+        if (onInitialEditVersionConsumed) onInitialEditVersionConsumed();
+      } else if (initialOpenCreateModal) {
         handleOpenCreateModal(currentAgentId);
       }
     }
-  }, [isOpen, initialTab, currentAgentId, initialOpenCreateModal]);
+  }, [isOpen, initialTab, currentAgentId, initialOpenCreateModal, initialEditVersion]);
 
   const refreshData = () => {
     // Carrega versões salvas
@@ -231,6 +261,7 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
 
   // Iniciar criação de novo agente personalizado
   const handleOpenCreateModal = async (baseId?: string) => {
+    setEditingAgentVersionId(null);
     const targetBaseId = baseId || selectedAgentSummary?.id || currentAgentId || agents[0]?.id || "SolutionArchitect";
     setCreateBaseAgentId(targetBaseId);
     setCreateValidationError(null);
@@ -260,6 +291,48 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
     }
   };
 
+  // Iniciar edição de agente personalizado existente
+  const handleOpenEditModal = async (version: SavedAgentVersion) => {
+    setEditingAgentVersionId(version.id);
+    setCreateBaseAgentId(version.agentId);
+    setCreateAgentName(version.name);
+    setCreateValidationError(null);
+
+    let availableTools: string[] = [];
+    let fallbackPrompt = "";
+    try {
+      const detail = await fetchAgentDetails(version.agentId);
+      availableTools = detail.toolNames || [];
+      fallbackPrompt = detail.canonicalPrompt || "";
+    } catch {
+      availableTools = [];
+    }
+    setCreateAvailableTools(availableTools);
+
+    const cfg = version.config;
+    setCreatePrompt(cfg.promptOverride ?? fallbackPrompt);
+    setCreateInputSchema(
+      cfg.inputSchemaOverride
+        ? typeof cfg.inputSchemaOverride === "string"
+          ? cfg.inputSchemaOverride
+          : JSON.stringify(cfg.inputSchemaOverride, null, 2)
+        : ""
+    );
+    setCreateOutputSchema(
+      cfg.outputSchemaOverride
+        ? typeof cfg.outputSchemaOverride === "string"
+          ? cfg.outputSchemaOverride
+          : JSON.stringify(cfg.outputSchemaOverride, null, 2)
+        : ""
+    );
+    setCreateTemperature(cfg.temperature ?? 0.2);
+    setCreateEffort(cfg.effort ?? "medium");
+    setCreateMode(cfg.mode ?? "standard");
+    setCreateEnabledTools(cfg.enabledTools ?? availableTools);
+    setCreateStepTab("prompt");
+    setIsCreateModalOpen(true);
+  };
+
   // Quando o usuário muda o agente base dentro do modal de criação
   const handleChangeBaseAgentInModal = async (newBaseId: string) => {
     setCreateBaseAgentId(newBaseId);
@@ -276,7 +349,7 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
     }
   };
 
-  // Salvar novo agente personalizado criado
+  // Salvar novo agente personalizado ou salvar edições no existente
   const handleSaveCreatedAgent = () => {
     if (!createAgentName.trim()) {
       setCreateValidationError("Por favor, informe um nome para este agente personalizado.");
@@ -318,18 +391,30 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
       enabledTools: createEnabledTools,
     };
 
-    const newVersion = saveAgentVersion({
-      agentId: createBaseAgentId,
-      name: createAgentName.trim(),
-      config,
-    });
+    if (editingAgentVersionId) {
+      const updated = updateAgentVersion(editingAgentVersionId, {
+        name: createAgentName.trim(),
+        config,
+      });
+      handleCloseCreateModal();
+      refreshData();
+      if (updated) setSelectedVersion(updated);
+      loadAgentDetail(createBaseAgentId);
+      if (onVersionSaved) onVersionSaved();
+    } else {
+      const newVersion = saveAgentVersion({
+        agentId: createBaseAgentId,
+        name: createAgentName.trim(),
+        config,
+      });
 
-    handleCloseCreateModal();
-    refreshData();
-    setAgentSubTab("custom");
-    setSelectedVersion(newVersion);
-    loadAgentDetail(createBaseAgentId);
-    if (onVersionSaved) onVersionSaved();
+      handleCloseCreateModal();
+      refreshData();
+      setAgentSubTab("custom");
+      setSelectedVersion(newVersion);
+      loadAgentDetail(createBaseAgentId);
+      if (onVersionSaved) onVersionSaved();
+    }
   };
 
   // Quando o usuário seleciona um preset da lista
@@ -373,7 +458,7 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
           title: editingPresetTitle,
           input: parsed,
         });
-        setSaveSuccessMsg("✅ Preset atualizado com sucesso!");
+        setSaveSuccessMsg("✅ Cenário atualizado com sucesso!");
         setTimeout(() => setSaveSuccessMsg(null), 3000);
         refreshData();
       } else {
@@ -383,7 +468,7 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
           input: parsed,
           expectedOutput: currentItem.expectedOutput,
         });
-        setSaveSuccessMsg("✅ Salvo como novo preset personalizado!");
+        setSaveSuccessMsg("✅ Salvo como novo cenário personalizado!");
         setTimeout(() => setSaveSuccessMsg(null), 3000);
         refreshData();
         setSelectedPresetId(newScn.id);
@@ -393,55 +478,78 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
     }
   };
 
-  // Salvar como novo preset
+  // Salvar como novo cenário (abre modal customizado)
   const handleSaveAsNewPreset = () => {
     try {
-      const parsed = JSON.parse(editingPresetJson);
-      const titlePrompt = prompt("Nome do novo preset:", `${editingPresetTitle} (Novo)`);
-      if (!titlePrompt) return;
-
-      const currentItem = allPresetsList.find((p) => p.id === selectedPresetId);
-      const agentId = currentItem ? currentItem.agentId : currentAgentId;
-
-      const newScn = saveScenario({
-        title: titlePrompt,
-        agentId,
-        input: parsed,
-      });
-      setSaveSuccessMsg("✅ Novo preset salvo com sucesso!");
-      setTimeout(() => setSaveSuccessMsg(null), 3000);
-      refreshData();
-      setSelectedPresetId(newScn.id);
+      JSON.parse(editingPresetJson);
+      setJsonValidationError(null);
+      setIsNewScenarioModalOpen(true);
     } catch (err: any) {
       setJsonValidationError(`JSON malformado: ${err.message}`);
     }
   };
 
-  // Excluir cenário salvo
-  const handleDeletePreset = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (confirm("Deseja realmente excluir este preset salvo?")) {
-      deleteScenario(id);
+  const handleConfirmSaveNewScenario = (scenarioTitle: string) => {
+    try {
+      const parsed = JSON.parse(editingPresetJson);
+      const currentItem = allPresetsList.find((p) => p.id === selectedPresetId);
+      const agentId = currentItem ? currentItem.agentId : currentAgentId;
+
+      const newScn = saveScenario({
+        title: scenarioTitle,
+        agentId,
+        input: parsed,
+      });
+      setSaveSuccessMsg("✅ Novo cenário salvo com sucesso!");
+      setTimeout(() => setSaveSuccessMsg(null), 3000);
       refreshData();
-      if (selectedPresetId === id) {
-        setSelectedPresetId(null);
-        setEditingPresetJson("");
-        setEditingPresetTitle("");
-      }
+      setSelectedPresetId(newScn.id);
+    } catch (err: any) {
+      setJsonValidationError(`Erro ao salvar cenário: ${err.message}`);
     }
   };
 
-  // Excluir versão de agente salva
+  // Excluir cenário salvo (abre ConfirmModal in-app)
+  const handleDeletePreset = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const target = savedScenarios.find((s) => s.id === id);
+    const targetTitle = target ? `"${target.title}"` : "este cenário";
+    setConfirmModal({
+      isOpen: true,
+      title: "Excluir Cenário Salvo",
+      description: `Tem certeza que deseja excluir ${targetTitle}? Os dados de entrada salvos deste cenário serão removidos permanentemente.`,
+      confirmText: "Excluir Cenário",
+      onConfirm: () => {
+        deleteScenario(id);
+        refreshData();
+        if (selectedPresetId === id) {
+          setSelectedPresetId(null);
+          setEditingPresetJson("");
+          setEditingPresetTitle("");
+        }
+      },
+    });
+  };
+
+  // Excluir versão de agente salva (abre ConfirmModal in-app)
   const handleDeleteVersion = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm("Deseja realmente excluir este agente personalizado?")) {
-      deleteAgentVersion(id);
-      refreshData();
-      if (onVersionSaved) onVersionSaved();
-      if (selectedVersion?.id === id) {
-        setSelectedVersion(null);
-      }
-    }
+    const target = savedVersions.find((v) => v.id === id);
+    const targetName = target ? `"${target.name}"` : "este agente personalizado";
+    setConfirmModal({
+      isOpen: true,
+      title: "Excluir Agente Personalizado",
+      description: `Tem certeza que deseja excluir ${targetName}? Todas as modificações de prompt, schemas e parâmetros associados a esta versão serão removidos permanentemente.`,
+      confirmText: "Excluir Agente",
+      onConfirm: () => {
+        deleteAgentVersion(id);
+        refreshData();
+        if (onVersionSaved) onVersionSaved();
+        if (selectedVersion?.id === id) {
+          setSelectedVersion(null);
+        }
+      },
+    });
   };
 
   // Aplicar ao Workbench
@@ -514,8 +622,7 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: "rgba(0, 0, 0, 0.75)",
-        backdropFilter: "blur(6px)",
+        backgroundColor: "rgba(5, 5, 8, 0.88)",
         padding: 20,
       }}
       onClick={onClose}
@@ -612,8 +719,8 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
                 className={`p16-tab-trigger ${activeTab === "presets" ? "active" : ""}`}
               >
                 <BookmarkCheck size={12} className={activeTab === "presets" ? "text-emerald-400" : "text-zinc-500"} />
-                <span>Presets & Cenários de Entrada</span>
-                {savedScenarios.length > 0 && (
+                <span>Cenários de Teste</span>
+                {allPresetsList.length > 0 && (
                   <span
                     style={{
                       fontSize: 10,
@@ -624,7 +731,7 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
                       fontFamily: "var(--font-mono)",
                     }}
                   >
-                    {savedScenarios.length}
+                    {allPresetsList.length}
                   </span>
                 )}
               </button>
@@ -638,7 +745,7 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
               title="Criar novo agente personalizado a partir de qualquer um dos 15 agentes SDLC"
             >
               <Plus className="h-3 w-3 text-cyan-400" />
-              <span>+ Novo Agente</span>
+              <span>Novo Agente</span>
             </Button>
 
             <Button
@@ -989,6 +1096,18 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
                               <Button
                                 variant="ghost"
                                 size="icon"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenEditModal(v);
+                                }}
+                                className="h-5 w-5 text-zinc-500 hover:text-cyan-400"
+                                title="Editar agente personalizado"
+                              >
+                                <Edit3 size={11} />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
                                 onClick={(e) => handleDeleteVersion(v.id, e)}
                                 className="h-5 w-5 text-zinc-500 hover:text-rose-400"
                                 title="Excluir agente personalizado"
@@ -1126,6 +1245,19 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
                           >
                             <ExternalLink size={12} className="mr-1.5" />
                             <span>Carregar no Workbench</span>
+                          </Button>
+                        )}
+
+                        {selectedVersion && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleOpenEditModal(selectedVersion)}
+                            className="h-7 text-xs border-cyan-700/60 text-cyan-300 hover:text-white bg-cyan-950/20 px-2.5"
+                            title="Editar parâmetros, prompts ou ferramentas deste agente personalizado"
+                          >
+                            <Edit3 size={12} className="mr-1 text-cyan-400" />
+                            <span>Editar Agente</span>
                           </Button>
                         )}
 
@@ -1478,7 +1610,7 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
               >
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
                   <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--text-subtle)" }}>
-                    Presets Salvos ({filteredPresets.length})
+                    Cenários de Teste ({filteredPresets.length})
                   </span>
                   <Button
                     variant="outline"
@@ -1487,7 +1619,7 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
                     className="h-6 px-2 text-[10px] border-zinc-800 text-zinc-300 hover:text-white"
                   >
                     <Plus size={11} className="mr-1 text-emerald-400" />
-                    <span>Novo Preset</span>
+                    <span>Novo Cenário</span>
                   </Button>
                 </div>
 
@@ -1524,7 +1656,7 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
                                 border: "1px solid rgba(99, 102, 241, 0.3)",
                               }}
                             >
-                              Oficial SDLC
+                              Padrão SDLC
                             </span>
                           ) : (
                             <span
@@ -1548,7 +1680,7 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
                             size="icon"
                             onClick={(e) => handleDeletePreset(preset.id, e)}
                             className="h-5 w-5 text-zinc-500 hover:text-rose-400"
-                            title="Excluir preset personalizado"
+                            title="Excluir cenário personalizado"
                           >
                             <Trash2 size={11} />
                           </Button>
@@ -1602,8 +1734,8 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
                             </Badge>
                             <span style={{ fontSize: 11, color: "var(--text-subtle)" }}>
                               {selectedPresetObj.isOfficial
-                                ? "Preset de Fábrica (Canônico)"
-                                : "Preset Personalizado Salvo"}
+                                ? "Cenário Padrão de Fábrica (Canônico)"
+                                : "Cenário Personalizado Salvo"}
                             </span>
                           </div>
 
@@ -1611,7 +1743,7 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
                             type="text"
                             value={editingPresetTitle}
                             onChange={(e) => setEditingPresetTitle(e.target.value)}
-                            placeholder="Nome do Preset..."
+                            placeholder="Nome do Cenário..."
                             style={{
                               width: "100%",
                               background: "var(--bg-surface-stage)",
@@ -1627,7 +1759,7 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
                         </div>
                       </div>
 
-                      {/* Ações do Preset */}
+                      {/* Ações do Cenário */}
                       <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                         <Button
                           variant="outline"
@@ -1645,7 +1777,7 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
                           size="sm"
                           onClick={handleSavePresetChanges}
                           className="h-7 text-xs border-emerald-800/60 text-emerald-300 hover:text-white bg-emerald-950/20"
-                          title="Salvar alterações feitas neste preset"
+                          title="Salvar alterações feitas neste cenário"
                         >
                           <Save size={12} className="mr-1 text-emerald-400" />
                           <span>Salvar Alterações</span>
@@ -1656,7 +1788,7 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
                           size="sm"
                           onClick={handleSaveAsNewPreset}
                           className="h-7 text-xs border-zinc-800 text-zinc-300 hover:text-white"
-                          title="Salvar como um novo preset independente"
+                          title="Salvar como um novo cenário independente"
                         >
                           <BookmarkPlus size={12} className="mr-1 text-indigo-400" />
                           <span>Salvar Cópia</span>
@@ -1667,10 +1799,10 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
                           size="sm"
                           onClick={handleApplyToWorkbench}
                           className="h-7 text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-medium shadow-sm"
-                          title="Carregar este payload de entrada no workbench e testar"
+                          title="Carregar este cenário de entrada no workbench e testar"
                         >
                           <ExternalLink size={12} className="mr-1.5" />
-                          <span>Aplicar & Testar</span>
+                          <span>Aplicar Cenário</span>
                         </Button>
                       </div>
                     </div>
@@ -1772,7 +1904,7 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
                   </>
                 ) : (
                   <div style={{ textAlign: "center", padding: 60, color: "var(--text-muted)" }}>
-                    Selecione um preset na lista lateral para inspecionar ou modificar.
+                    Selecione um cenário na lista lateral para inspecionar ou modificar.
                   </div>
                 )}
               </div>
@@ -1794,8 +1926,7 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            backgroundColor: "rgba(0, 0, 0, 0.8)",
-            backdropFilter: "blur(4px)",
+            backgroundColor: "rgba(5, 5, 8, 0.92)",
             padding: 20,
           }}
           onClick={handleCloseCreateModal}
@@ -1817,7 +1948,7 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header Modal Criação */}
+            {/* Header Modal Criação / Edição */}
             <div
               style={{
                 display: "flex",
@@ -1829,9 +1960,13 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Plus size={16} className="text-cyan-400" />
+                {editingAgentVersionId ? (
+                  <Edit3 size={16} className="text-cyan-400" />
+                ) : (
+                  <Plus size={16} className="text-cyan-400" />
+                )}
                 <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--text-main)" }}>
-                  Criar Novo Agente Personalizado
+                  {editingAgentVersionId ? "Editar Agente Personalizado" : "Criar Novo Agente Personalizado"}
                 </h3>
               </div>
               <Button
@@ -1844,7 +1979,7 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
               </Button>
             </div>
 
-            {/* Inputs: Agente Base e Nome da Nova Versão */}
+            {/* Inputs: Agente Base e Nome da Versão */}
             <div
               style={{
                 padding: "12px 20px",
@@ -1861,10 +1996,12 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
                 </label>
                 <select
                   value={createBaseAgentId}
+                  disabled={Boolean(editingAgentVersionId)}
                   onChange={(e) => handleChangeBaseAgentInModal(e.target.value)}
                   style={{
                     width: "100%",
-                    background: "var(--bg-surface)",
+                    background: Boolean(editingAgentVersionId) ? "var(--bg-surface-stage)" : "var(--bg-surface)",
+                    opacity: Boolean(editingAgentVersionId) ? 0.75 : 1,
                     color: "var(--text-main)",
                     border: "1px solid var(--border-medium)",
                     borderRadius: "var(--radius-sm)",
@@ -1872,7 +2009,7 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
                     fontSize: 12,
                     fontFamily: "var(--font-mono)",
                     outline: "none",
-                    cursor: "pointer",
+                    cursor: Boolean(editingAgentVersionId) ? "not-allowed" : "pointer",
                   }}
                 >
                   {agents.map((a) => (
@@ -2267,12 +2404,31 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
                 className="h-7 text-xs bg-cyan-600 hover:bg-cyan-500 text-white font-medium px-3"
               >
                 <Save size={12} className="mr-1.5" />
-                <span>Salvar Agente Personalizado</span>
+                <span>{editingAgentVersionId ? "Salvar Alterações" : "Salvar Agente Personalizado"}</span>
               </Button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Modal de Confirmação In-App (substitui window.confirm do navegador) */}
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmModal.onConfirm}
+        title={confirmModal.title}
+        description={confirmModal.description}
+        confirmText={confirmModal.confirmText}
+        variant="danger"
+      />
+
+      {/* Modal para Salvar Novo Cenário (substitui window.prompt do navegador) */}
+      <ScenarioModal
+        isOpen={isNewScenarioModalOpen}
+        onClose={() => setIsNewScenarioModalOpen(false)}
+        onSave={handleConfirmSaveNewScenario}
+        defaultTitle={`${editingPresetTitle || "Cenário"} (Novo)`}
+      />
     </div>
   );
 };

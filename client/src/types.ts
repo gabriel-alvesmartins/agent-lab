@@ -11,11 +11,13 @@ export interface AgentSummary {
   readsFromCount: number;
   producesArtifact: string;
   presetsCount: number;
+  version?: string;
 }
 
 export interface AgentDetail {
   id: string;
   name: string;
+  version?: string;
   phase: number;
   phaseName: string;
   category: string;

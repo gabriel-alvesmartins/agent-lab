@@ -1,5 +1,362 @@
 [
   {
+    "agentId": "Discovery",
+    "title": "Experimento A/B — Discovery (Original (Oficial SDLC) vs Configuração Atual (Personalizada))",
+    "modelId": "anthropic:claude-sonnet-4-6",
+    "mode": "fallback",
+    "input": {
+      "brief": "Precisamos de uma plataforma de telemetria veicular para frotas pesadas chamada FleetPulse. As transportadoras perdem até 18% em combustível e manutenção corretiva por falta de visibilidade em tempo real. O sistema precisa coletar dados de 50.000 caminhões a cada 5 segundos (picos de 15.000 eventos/s), emitir alertas em menos de 2 segundos para o navegador do despachante e sincronizar ordens de serviço com ERPs como SAP e TOTVS.",
+      "specId": "F-FLEET-001",
+      "parent": "PROD-LOGISTICS"
+    },
+    "versionAName": "Original (Oficial SDLC)",
+    "versionBName": "Configuração Atual (Personalizada)",
+    "canonicalConfig": {
+      "prompt": "Você é o Discovery Agent do framework AI-4SDLC Platform (modo: standard).\n\nSua tarefa: a partir de um brief de stakeholder (frequentemente vago),\nproduzir uma descoberta estruturada cobrindo:\n  - problemStatement: 2-4 parágrafos descrevendo o problema real, não a solução proposta.\n  - personas[]: 1-4 STRINGS no formato canônico (Wave 21 V.7 v3 — schema\n    grammar compaction). Cada string DEVE seguir o padrão:\n      'PER-N: <Nome> | <Role> | goals: <g1>; <g2>; ... | pains: <p1>; <p2>; ... | context: <c1>; <c2>'\n    Exemplo: 'PER-1: Helena | CTO da clínica | goals: integrar prontuário; reduzir no-show 20%; LGPD compliant | pains: prontuário em papel; tempo perdido em ligações; ausência de métricas | context: 3 médicos; 2 recepcionistas; região metropolitana SP'.\n    Seções pains/context opcionais; goals OBRIGATÓRIA. Use ';' como separator dentro de cada seção. Max 4 personas.\n  - jobsToBeDone[]: 1-6 STRINGS no formato canônico:\n      'JTBD-N: <statement no formato Quando X, quero Y, para Z> | trigger: <gatilho> | outcome: <resultado mensurável> | alts: <alt1>; <alt2>'\n    Exemplo: 'JTBD-1: Quando o paciente quer marcar fora do horário comercial, ele quer agendar online sem ligar, para evitar fricção | trigger: paciente em horário não-comercial | outcome: agendamento confirmado em <2min | alts: WhatsApp recepção; ligação manual; abandono'.\n    Seções trigger/outcome/alts opcionais; statement OBRIGATÓRIA. Max 6 JTBDs.\n  - assumptions: hipóteses implícitas no brief que precisam validação. Max 8.\n  - openQuestions: perguntas que ficaram sem resposta após a leitura do brief. Max 8.\n  - successSignals: sinais mensuráveis de sucesso (NÃO solução técnica). Max 8.\n\nNÃO é sua responsabilidade (outros agentes cobrem):\n  - Você NÃO monta risk inventory: os signals declarativos de risco (dados\n    sensíveis, dinheiro, regulados, vulneráveis, residência, impacto, reversibilidade)\n    são elicitados pelo RiskElicitor (ADR-084) em passo próprio.\n  - NUNCA infira tier de risco — o tier é OUTPUT auditável do TierClassifier (ADR-076).\n  - NÃO emita nenhum campo `riskInventory` no seu output: o schema não o aceita\n    (ADR-082) e o objeto inteiro seria rejeitado.\n  Se o brief for omisso sobre dados sensíveis/regulatório, registre como\n  `openQuestions` (ou `clarificationsNeeded`, se for material) — não tente responder.\n\nRegras:\n- Nunca proponha solução técnica (deixe para PM/Architect).\n- IDs: personas começam com 'PER-' (PER-1, PER-2, ...); JTBDs com 'JTBD-'.\n- Quando o brief é ambíguo, EMITA `clarificationsNeeded` com 1-3 perguntas (max reduzido de 6→3 em V.7 v3)\n  ESTRUTURADAS (cada uma com 2-6 opções concretas + descrições multi-line).\n- Se já consumiu o cap, finalize com `clarificationsNeeded` vazio + assumptions.\n- EXCEÇÃO (tem precedência sobre as duas regras acima): se o brief contiver a diretiva\n  '[MODO ESCLARECIMENTO COMPLETO ...]', o stakeholder pediu para ser perguntado até as\n  dúvidas MATERIAIS resolverem — então IGNORE o cap de 1-3 e emita TODAS as dúvidas\n  MATERIAIS (regulatório/legal, escopo, dados sensíveis, consentimento, menores,\n  monetização, custódia/pagamento) como `clarificationsNeeded` ESTRUTURADAS. Nesse modo\n  é PROIBIDO desviar dúvida MATERIAL pra `openQuestions`/`assumptions` (que ficam só pra\n  dúvidas NÃO-materiais) e você será re-perguntado com as respostas (multi-round).\n- Saída SEMPRE no shape JSON especificado pelo schema.",
+      "outputSchemaJson": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "string",
+            "minLength": 10
+          },
+          "problemStatement": {
+            "type": "string",
+            "minLength": 20
+          },
+          "personas": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "description": "Prefira ao menos 20 caracteres neste item."
+            },
+            "description": "String-format persona. Formato: \"PER-N: <Nome> | <Role> | goals: <g1>; <g2>; ... | pains: <p1>; <p2>; ... | context: <c1>\". Exemplo: \"PER-1: Helena | CTO da clínica | goals: integrar prontuário; reduzir no-show 20%; LGPD compliant | pains: prontuário em papel; tempo perdido em ligações; ausência de métricas | context: 3 médicos; 2 recepcionistas; região metropolitana SP\". Max 4 personas pra evitar grammar bloat (era 5 nested schema)."
+          },
+          "jobsToBeDone": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "description": "Prefira ao menos 20 caracteres neste item."
+            },
+            "description": "String-format JTBD. Formato: \"JTBD-N: <statement> | trigger: <gatilho> | outcome: <resultado desejado> | alts: <alternativa1>; <alternativa2>\". Exemplo: \"JTBD-1: Agendar consulta online | trigger: paciente quer marcar fora do horário comercial | outcome: agendamento confirmado em <2min sem ligar | alts: WhatsApp recepção; ligação manual; abandono\". Max 6 JTBDs (era 8 nested schema)."
+          },
+          "assumptions": {
+            "default": [],
+            "description": "Prefira até 8 itens.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "description": "Prefira ao menos 5 caracteres neste item."
+            }
+          },
+          "openQuestions": {
+            "default": [],
+            "description": "Prefira até 8 itens.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "successSignals": {
+            "default": [],
+            "description": "Prefira até 8 itens.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "clarificationsNeeded": {
+            "description": "0-3 perguntas estruturadas (max reduzido de 6→3 em V.7 hotfix v3 alinhamento Compliance/UX) pra elicitar problema/persona/JTBD quando brief stakeholder é ambíguo.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "ID estável curto da pergunta (ex: 'Q-scope-fase1', 'Q-auth-provider')."
+                },
+                "prompt": {
+                  "type": "string",
+                  "minLength": 8,
+                  "description": "Pergunta concreta ao stakeholder (ex: 'Qual o escopo da Fase 1?')."
+                },
+                "options": {
+                  "minItems": 2,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "minLength": 2,
+                        "description": "Título curto (≤80 chars) da opção (ex: 'Mínimo viável: PM + Architect')."
+                      },
+                      "description": {
+                        "type": "string",
+                        "minLength": 5,
+                        "description": "Descrição multi-line explicando trade-offs e implicações da escolha."
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "description"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "description": "Opções disponíveis. Sempre ≥2 alternativas; prefira ≤6 pra não ofuscar a UX."
+                },
+                "allowFreeText": {
+                  "description": "Permite resposta livre 'Type something' além das opções.",
+                  "type": "boolean"
+                },
+                "context": {
+                  "description": "Contexto opcional explicando o porquê da pergunta.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "prompt",
+                "options"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "summary",
+          "problemStatement",
+          "personas",
+          "jobsToBeDone",
+          "assumptions",
+          "openQuestions",
+          "successSignals"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "customConfig": {
+      "promptMode": "canonical",
+      "promptAppend": "",
+      "promptOverride": "Você é o Discovery Agent do framework AI-4SDLC Platform (modo: standard).\n\nSua tarefa: a partir de um brief de stakeholder (frequentemente vago),\nproduzir uma descoberta estruturada cobrindo:\n  - problemStatement: 2-4 parágrafos descrevendo o problema real, não a solução proposta.\n  - personas[]: 1-4 STRINGS no formato canônico (Wave 21 V.7 v3 — schema\n    grammar compaction). Cada string DEVE seguir o padrão:\n      'PER-N: <Nome> | <Role> | goals: <g1>; <g2>; ... | pains: <p1>; <p2>; ... | context: <c1>; <c2>'\n    Exemplo: 'PER-1: Helena | CTO da clínica | goals: integrar prontuário; reduzir no-show 20%; LGPD compliant | pains: prontuário em papel; tempo perdido em ligações; ausência de métricas | context: 3 médicos; 2 recepcionistas; região metropolitana SP'.\n    Seções pains/context opcionais; goals OBRIGATÓRIA. Use ';' como separator dentro de cada seção. Max 4 personas.\n  - jobsToBeDone[]: 1-6 STRINGS no formato canônico:\n      'JTBD-N: <statement no formato Quando X, quero Y, para Z> | trigger: <gatilho> | outcome: <resultado mensurável> | alts: <alt1>; <alt2>'\n    Exemplo: 'JTBD-1: Quando o paciente quer marcar fora do horário comercial, ele quer agendar online sem ligar, para evitar fricção | trigger: paciente em horário não-comercial | outcome: agendamento confirmado em <2min | alts: WhatsApp recepção; ligação manual; abandono'.\n    Seções trigger/outcome/alts opcionais; statement OBRIGATÓRIA. Max 6 JTBDs.\n  - assumptions: hipóteses implícitas no brief que precisam validação. Max 8.\n  - openQuestions: perguntas que ficaram sem resposta após a leitura do brief. Max 8.\n  - successSignals: sinais mensuráveis de sucesso (NÃO solução técnica). Max 8.\n\nNÃO é sua responsabilidade (outros agentes cobrem):\n  - Você NÃO monta risk inventory: os signals declarativos de risco (dados\n    sensíveis, dinheiro, regulados, vulneráveis, residência, impacto, reversibilidade)\n    são elicitados pelo RiskElicitor (ADR-084) em passo próprio.\n  - NUNCA infira tier de risco — o tier é OUTPUT auditável do TierClassifier (ADR-076).\n  - NÃO emita nenhum campo `riskInventory` no seu output: o schema não o aceita\n    (ADR-082) e o objeto inteiro seria rejeitado.\n  Se o brief for omisso sobre dados sensíveis/regulatório, registre como\n  `openQuestions` (ou `clarificationsNeeded`, se for material) — não tente responder.\n\nRegras:\n- Nunca proponha solução técnica (deixe para PM/Architect).\n- IDs: personas começam com 'PER-' (PER-1, PER-2, ...); JTBDs com 'JTBD-'.\n- Quando o brief é ambíguo, EMITA `clarificationsNeeded` com 1-3 perguntas (max reduzido de 6→3 em V.7 v3)\n  ESTRUTURADAS (cada uma com 2-6 opções concretas + descrições multi-line).\n- Se já consumiu o cap, finalize com `clarificationsNeeded` vazio + assumptions.\n- EXCEÇÃO (tem precedência sobre as duas regras acima): se o brief contiver a diretiva\n  '[MODO ESCLARECIMENTO COMPLETO ...]', o stakeholder pediu para ser perguntado até as\n  dúvidas MATERIAIS resolverem — então IGNORE o cap de 1-3 e emita TODAS as dúvidas\n  MATERIAIS (regulatório/legal, escopo, dados sensíveis, consentimento, menores,\n  monetização, custódia/pagamento) como `clarificationsNeeded` ESTRUTURADAS. Nesse modo\n  é PROIBIDO desviar dúvida MATERIAL pra `openQuestions`/`assumptions` (que ficam só pra\n  dúvidas NÃO-materiais) e você será re-perguntado com as respostas (multi-round).\n- Saída SEMPRE no shape JSON especificado pelo schema.",
+      "mode": "standard",
+      "riskTier": "limited",
+      "temperature": 0.2,
+      "effort": "medium"
+    },
+    "canonicalResult": {
+      "success": true,
+      "output": {
+        "summary": "Discovery placeholder para F-FLEET-001 (modo offline; sem LLM).",
+        "problemStatement": "Brief recebido: \"Precisamos de uma plataforma de telemetria veicular para frotas pesadas chamada FleetPulse. As transportadoras perdem at...\". Análise detalhada do problema requer LLM ativo. Em modo offline, este placeholder existe apenas para preservar o shape do output e permitir testes determinísticos do orquestrador.",
+        "personas": [
+          "PER-1: Stakeholder offline | Decisor primário | goals: Validar fluxo end-to-end do framework | pains: LLM indisponível durante testes hermets | context: Modo SDLC_OFFLINE=1 ativo"
+        ],
+        "jobsToBeDone": [
+          "JTBD-1: Quando testo o framework offline, quero placeholders válidos para o shape | trigger: CI hermético; Smoke tests sem ANTHROPIC_API_KEY | outcome: Discovery output passa Zod parse sem chamadas LLM | alts: Mock manual no test fixture"
+        ],
+        "assumptions": [
+          "LLM voltará a estar disponível antes de gate G1"
+        ],
+        "openQuestions": [
+          "Qual LLM ficará disponível para este run?",
+          "Qual é o brief real do stakeholder além do placeholder?"
+        ],
+        "successSignals": [
+          "Spec G1 aprovado por humano após Discovery online completar"
+        ],
+        "clarificationsNeeded": [
+          {
+            "id": "Q1-buyer",
+            "prompt": "Quem é o comprador?",
+            "options": [
+              {
+                "label": "Cliente final",
+                "description": "Pessoa física que compra para uso próprio."
+              },
+              {
+                "label": "Lojista / revendedor",
+                "description": "Compra em quantidade para revender."
+              },
+              {
+                "label": "Ambos",
+                "description": "Mix de cliente final + revendedor cadastrado."
+              }
+            ],
+            "allowFreeText": true
+          },
+          {
+            "id": "Q3-pain",
+            "prompt": "Onde dói mais hoje? (pode marcar mais de uma)",
+            "options": [
+              {
+                "label": "Pedidos perdidos em mensagens",
+                "description": "WhatsApp / Instagram saturados; conversa some."
+              },
+              {
+                "label": "Estoque descoordenado",
+                "description": "Vende-se o que não tem; reabastecimento desalinhado."
+              },
+              {
+                "label": "Pagamento manual",
+                "description": "Conferência manual de Pix/transfer; risco de erro."
+              },
+              {
+                "label": "Logística manual",
+                "description": "Cada envio combinado por conversa individual."
+              }
+            ],
+            "allowFreeText": true
+          },
+          {
+            "id": "Q6-success-signal",
+            "prompt": "Em 6 meses, como você sabe que esse projeto DEU CERTO?",
+            "options": [
+              {
+                "label": "Faturamento dobrou",
+                "description": "Métrica financeira clara."
+              },
+              {
+                "label": "Tempo de atendimento caiu drasticamente",
+                "description": "ROI operacional (horas/sem)."
+              },
+              {
+                "label": "Mais fornecedores ativos",
+                "description": "Crescimento de oferta."
+              },
+              {
+                "label": "Outro (texto livre)",
+                "description": "Descreva sinal customizado."
+              }
+            ],
+            "allowFreeText": true
+          }
+        ]
+      },
+      "elapsedMs": 1,
+      "outputValid": true,
+      "markdown": "# Artefato Gerado: Discovery\n\n## Sumário Executivo\n\nDiscovery placeholder para F-FLEET-001 (modo offline; sem LLM).\n\n## Declaração do Problema\n\nBrief recebido: \"Precisamos de uma plataforma de telemetria veicular para frotas pesadas chamada FleetPulse. As transportadoras perdem at...\". Análise detalhada do problema requer LLM ativo. Em modo offline, este placeholder existe apenas para preservar o shape do output e permitir testes determinísticos do orquestrador.\n\n## Personas\n\n- PER-1: Stakeholder offline | Decisor primário | goals: Validar fluxo end-to-end do framework | pains: LLM indisponível durante testes hermets | context: Modo SDLC_OFFLINE=1 ativo\n\n## Jobs-To-Be-Done (JTBD)\n\n- JTBD-1: Quando testo o framework offline, quero placeholders válidos para o shape | trigger: CI hermético; Smoke tests sem ANTHROPIC_API_KEY | outcome: Discovery output passa Zod parse sem chamadas LLM | alts: Mock manual no test fixture\n"
+    },
+    "customResult": {
+      "success": true,
+      "output": {
+        "summary": "Discovery placeholder para F-FLEET-001 (modo offline; sem LLM).",
+        "problemStatement": "Brief recebido: \"Precisamos de uma plataforma de telemetria veicular para frotas pesadas chamada FleetPulse. As transportadoras perdem at...\". Análise detalhada do problema requer LLM ativo. Em modo offline, este placeholder existe apenas para preservar o shape do output e permitir testes determinísticos do orquestrador.",
+        "personas": [
+          "PER-1: Stakeholder offline | Decisor primário | goals: Validar fluxo end-to-end do framework | pains: LLM indisponível durante testes hermets | context: Modo SDLC_OFFLINE=1 ativo"
+        ],
+        "jobsToBeDone": [
+          "JTBD-1: Quando testo o framework offline, quero placeholders válidos para o shape | trigger: CI hermético; Smoke tests sem ANTHROPIC_API_KEY | outcome: Discovery output passa Zod parse sem chamadas LLM | alts: Mock manual no test fixture"
+        ],
+        "assumptions": [
+          "LLM voltará a estar disponível antes de gate G1"
+        ],
+        "openQuestions": [
+          "Qual LLM ficará disponível para este run?",
+          "Qual é o brief real do stakeholder além do placeholder?"
+        ],
+        "successSignals": [
+          "Spec G1 aprovado por humano após Discovery online completar"
+        ],
+        "clarificationsNeeded": [
+          {
+            "id": "Q1-buyer",
+            "prompt": "Quem é o comprador?",
+            "options": [
+              {
+                "label": "Cliente final",
+                "description": "Pessoa física que compra para uso próprio."
+              },
+              {
+                "label": "Lojista / revendedor",
+                "description": "Compra em quantidade para revender."
+              },
+              {
+                "label": "Ambos",
+                "description": "Mix de cliente final + revendedor cadastrado."
+              }
+            ],
+            "allowFreeText": true
+          },
+          {
+            "id": "Q3-pain",
+            "prompt": "Onde dói mais hoje? (pode marcar mais de uma)",
+            "options": [
+              {
+                "label": "Pedidos perdidos em mensagens",
+                "description": "WhatsApp / Instagram saturados; conversa some."
+              },
+              {
+                "label": "Estoque descoordenado",
+                "description": "Vende-se o que não tem; reabastecimento desalinhado."
+              },
+              {
+                "label": "Pagamento manual",
+                "description": "Conferência manual de Pix/transfer; risco de erro."
+              },
+              {
+                "label": "Logística manual",
+                "description": "Cada envio combinado por conversa individual."
+              }
+            ],
+            "allowFreeText": true
+          },
+          {
+            "id": "Q6-success-signal",
+            "prompt": "Em 6 meses, como você sabe que esse projeto DEU CERTO?",
+            "options": [
+              {
+                "label": "Faturamento dobrou",
+                "description": "Métrica financeira clara."
+              },
+              {
+                "label": "Tempo de atendimento caiu drasticamente",
+                "description": "ROI operacional (horas/sem)."
+              },
+              {
+                "label": "Mais fornecedores ativos",
+                "description": "Crescimento de oferta."
+              },
+              {
+                "label": "Outro (texto livre)",
+                "description": "Descreva sinal customizado."
+              }
+            ],
+            "allowFreeText": true
+          }
+        ]
+      },
+      "elapsedMs": 1,
+      "outputValid": true,
+      "markdown": "# Artefato Gerado: Discovery\n\n## Sumário Executivo\n\nDiscovery placeholder para F-FLEET-001 (modo offline; sem LLM).\n\n## Declaração do Problema\n\nBrief recebido: \"Precisamos de uma plataforma de telemetria veicular para frotas pesadas chamada FleetPulse. As transportadoras perdem at...\". Análise detalhada do problema requer LLM ativo. Em modo offline, este placeholder existe apenas para preservar o shape do output e permitir testes determinísticos do orquestrador.\n\n## Personas\n\n- PER-1: Stakeholder offline | Decisor primário | goals: Validar fluxo end-to-end do framework | pains: LLM indisponível durante testes hermets | context: Modo SDLC_OFFLINE=1 ativo\n\n## Jobs-To-Be-Done (JTBD)\n\n- JTBD-1: Quando testo o framework offline, quero placeholders válidos para o shape | trigger: CI hermético; Smoke tests sem ANTHROPIC_API_KEY | outcome: Discovery output passa Zod parse sem chamadas LLM | alts: Mock manual no test fixture\n"
+    },
+    "diffSummary": {
+      "totalLinesA": 87,
+      "totalLinesB": 87,
+      "diffLinesCount": 0,
+      "structuralDiff": {
+        "addedKeys": [],
+        "removedKeys": [],
+        "commonKeys": [
+          "summary",
+          "problemStatement",
+          "personas",
+          "jobsToBeDone",
+          "assumptions",
+          "openQuestions",
+          "successSignals",
+          "clarificationsNeeded"
+        ]
+      }
+    },
+    "id": "exp_1790785379095_2fyac",
+    "createdAt": "2026-09-30T16:22:59.095Z"
+  },
+  {
     "agentId": "SolutionArchitect",
     "title": "Experimento A/B — SolutionArchitect (Original (Oficial SDLC) vs Configuração Atual (Personalizada))",
     "modelId": "anthropic:claude-sonnet-4-6",

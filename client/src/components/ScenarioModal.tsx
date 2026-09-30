@@ -33,8 +33,7 @@ export const ScenarioModal: React.FC<ScenarioModalProps> = ({
       style={{
         position: "fixed",
         inset: 0,
-        backgroundColor: "rgba(0, 0, 0, 0.65)",
-        backdropFilter: "blur(4px)",
+        backgroundColor: "rgba(5, 5, 8, 0.85)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",

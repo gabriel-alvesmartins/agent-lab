@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from "react";
-import { X, Sliders, Check, BookmarkPlus, Play, Lock, Copy, AlertCircle } from "lucide-react";
+import { X, Sliders, Check, BookmarkPlus, Play, Lock, Copy, AlertCircle, Save, Edit3 } from "lucide-react";
 import { AgentCharacteristicsConfig, AgentDetail, AgentSummary, SavedAgentVersion } from "../types.js";
 import { AgentConfigPanel } from "./AgentConfigPanel.js";
 import { Button } from "./ui/button.js";
 import { Badge } from "./ui/badge.js";
-import { saveAgentVersion, loadSavedAgentVersions } from "../lib/storage.js";
+import { saveAgentVersion, updateAgentVersion, loadSavedAgentVersions } from "../lib/storage.js";
 import { fetchAgentDetails } from "../lib/api.js";
 
 interface AgentConfigSheetProps {
@@ -174,6 +174,32 @@ export const AgentConfigSheet: React.FC<AgentConfigSheetProps> = ({
     setTimeout(() => setSaveSuccessMessage(null), 3000);
   };
 
+  // Salvar alterações na versão customizada atualmente selecionada
+  const isCustomSavedVersion = versionOption !== "canonical" && versionOption !== "active";
+  const currentSavedVersion = savedVersions.find((v) => v.id === versionOption);
+
+  const handleUpdateCurrentVersion = () => {
+    if (!currentSavedVersion) return;
+    const newConfig: AgentCharacteristicsConfig = {
+      ...sheetConfig,
+      promptMode: "override",
+      promptOverride: sheetConfig.promptOverride || currentDetail.canonicalPrompt || "",
+    };
+
+    updateAgentVersion(currentSavedVersion.id, {
+      config: newConfig,
+    });
+
+    const vers = loadSavedAgentVersions(currentDetail.id);
+    setSavedVersions(vers);
+    if (selectedAgentId === agent.id) {
+      onChange(newConfig);
+    }
+    setSaveSuccessMessage(`Alterações salvas na versão "${currentSavedVersion.name}" com sucesso!`);
+    if (onVersionSaved) onVersionSaved();
+    setTimeout(() => setSaveSuccessMessage(null), 3000);
+  };
+
   // Selecionar este agente para testar na bancada
   const handleSelectForWorkbench = () => {
     if (onSelectAgentForWorkbench) {
@@ -195,8 +221,7 @@ export const AgentConfigSheet: React.FC<AgentConfigSheetProps> = ({
         zIndex: 9999,
         display: "flex",
         justifyContent: "flex-end",
-        backgroundColor: "rgba(0, 0, 0, 0.65)",
-        backdropFilter: "blur(4px)",
+        backgroundColor: "rgba(5, 5, 8, 0.85)",
       }}
       onClick={onClose}
     >
@@ -362,6 +387,33 @@ export const AgentConfigSheet: React.FC<AgentConfigSheetProps> = ({
                 <Copy size={12} className="mr-1.5 text-indigo-400" />
                 <span>Personalizar Agente</span>
               </Button>
+            ) : isCustomSavedVersion ? (
+              <>
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={handleUpdateCurrentVersion}
+                  className="h-8 text-xs bg-cyan-600 hover:bg-cyan-500 text-white font-medium shadow-sm"
+                  title="Salvar alterações diretamente nesta versão personalizada sem criar uma nova"
+                >
+                  <Save size={12} className="mr-1.5" />
+                  <span>Salvar Alterações</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setVersionName(`${currentSavedVersion?.name || currentDetail.name} (Cópia)`);
+                    setVersionDesc("");
+                    setIsSavingVersion(true);
+                  }}
+                  className="h-8 text-xs border-cyan-800/60 text-cyan-300 hover:text-cyan-100 bg-cyan-950/20"
+                  title="Salvar como uma nova versão independente"
+                >
+                  <BookmarkPlus size={12} className="mr-1.5 text-cyan-400" />
+                  <span>Salvar Como Nova Versão</span>
+                </Button>
+              </>
             ) : (
               <Button
                 variant="outline"

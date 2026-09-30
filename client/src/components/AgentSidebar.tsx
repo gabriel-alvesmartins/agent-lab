@@ -52,7 +52,7 @@ const PHASE_NAMES: Record<number, string> = {
   5: "Fase 5 · Qualidade & Governança",
 };
 
-export const AgentSidebar: React.FC<AgentSidebarProps> = ({
+const AgentSidebarComponent: React.FC<AgentSidebarProps> = ({
   agents,
   selectedAgentId,
   onSelectAgent,
@@ -292,3 +292,5 @@ export const AgentSidebar: React.FC<AgentSidebarProps> = ({
     </aside>
   );
 };
+
+export const AgentSidebar = React.memo(AgentSidebarComponent);

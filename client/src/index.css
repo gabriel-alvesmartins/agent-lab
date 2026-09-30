@@ -385,9 +385,9 @@ input[type="reset"] {
   z-index: 1;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
-  font-size: 12px;
+  gap: 5px;
+  padding: 4px 9px;
+  font-size: 11.5px;
   font-weight: 500;
   color: var(--text-muted);
   background: transparent;

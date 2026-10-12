@@ -121,10 +121,11 @@ export const AGENTS_CATALOG: Record<string, AgentMetadata> = {
       consumers: ["TierClassifier", "Auditor"],
     },
     inputSchemaFields: [
-      { name: "brief", type: "string", required: true, description: "Briefing ou escopo da funcionalidade." },
+      { name: "brief", type: "string", required: true, description: "Briefing ou escopo da funcionalidade (mínimo 5 caracteres)." },
       { name: "problemStatement", type: "string", required: false, description: "Problema sintetizado pelo Discovery." },
-      { name: "personas", type: "string[]", required: false, description: "Lista de personas identificadas." },
-      { name: "jobsToBeDone", type: "string[]", required: false, description: "Lista de JTBD mapeados." },
+      { name: "personas", type: "object[]", required: false, description: "Lista de personas no formato [{ name, role }]." },
+      { name: "jobsToBeDone", type: "object[]", required: false, description: "Lista de JTBDs no formato [{ jobStatement }]." },
+      { name: "previousAnswers", type: "object", required: false, description: "Respostas prévias de clarification se houver." },
     ],
     presets: [
       {
@@ -134,8 +135,13 @@ export const AGENTS_CATALOG: Record<string, AgentMetadata> = {
         input: {
           brief: "FleetPulse rastreia 50.000 caminhoneiros via OBD-II/GPS a cada 5 segundos com dados de localização geográfica contínua e telemetria de freios.",
           problemStatement: "Transportadoras perdem milhões com atrasos e acidentes devido à ausência de telemetria em tempo real com baixa latência.",
-          personas: ["PER-1: Despachante Logístico", "PER-2: Motorista Rodoviário"],
-          jobsToBeDone: ["JTBD-1: Monitorar status e anomalias de condução em tempo real"],
+          personas: [
+            { name: "Despachante Logístico", role: "Supervisão da frota em tempo real" },
+            { name: "Motorista Rodoviário", role: "Condução do veículo e transporte rodoviário" },
+          ],
+          jobsToBeDone: [
+            { jobStatement: "Monitorar status e anomalias de condução em tempo real" },
+          ],
         },
       },
     ],
@@ -166,9 +172,10 @@ export const AGENTS_CATALOG: Record<string, AgentMetadata> = {
       consumers: ["PM", "Auditor", "Gates HITL"],
     },
     inputSchemaFields: [
-      { name: "riskInventory", type: "object", required: true, description: "Objeto com o inventário de riscos e sinais R1-R9." },
+      { name: "riskInventory", type: "object", required: false, description: "Objeto completo com RiskInventory validado." },
       { name: "cwd", type: "string", required: false, description: "Diretório de trabalho do projeto." },
       { name: "complianceOfficer", type: "string", required: false, description: "Responsável de compliance opcional." },
+      { name: "override", type: "object", required: false, description: "Override manual de tier assinado pelo CO." },
     ],
     presets: [
       {
@@ -177,13 +184,44 @@ export const AGENTS_CATALOG: Record<string, AgentMetadata> = {
         description: "Classificação de risco elevado por monitoramento contínuo de pessoas naturais (motoristas CLT/PJ).",
         input: {
           riskInventory: {
-            r1_personal_data: true,
-            r2_financial_data: false,
-            r3_vulnerability_surface: true,
-            r4_critical_infrastructure: true,
-            r5_scale_volume: true,
-            r9_ai_involvement: true,
-            justification: "Rastreamento geográfico contínuo constitui dado pessoal e dado de comportamento do trabalhador sob a LGPD.",
+            inventory_version: "0.1.0",
+            data: [
+              "pii_basic",
+              "pii_address"
+            ],
+            users: [
+              {
+                profile: "b2b",
+                vulnerable: [
+                  "none"
+                ]
+              }
+            ],
+            integrations: [
+              "regulated_fiscal_api"
+            ],
+            effects: [
+              "regulated_output_fiscal"
+            ],
+            jurisdiction: {
+              data_residency: "brasil_obrigatorio",
+              countries_served: [
+                "BR"
+              ],
+              regulators_applicable: [
+                "ANPD",
+                "ANATEL"
+              ]
+            },
+            failure_costs: [
+              "fine_lgpd_anpd"
+            ],
+            scoring: {
+              likelihood_max: 4,
+              impact_max: 4,
+              score_max: 16
+            },
+            notes: "Rastreamento geográfico contínuo constitui dado pessoal e dado de comportamento do trabalhador sob a LGPD.",
           },
         },
       },
@@ -678,6 +716,10 @@ export const AGENTS_CATALOG: Record<string, AgentMetadata> = {
           specBody: "Comunicação entre 50.000 módulos IoT embarcados e o broker em nuvem via redes móveis celulares.",
           architect: {
             summary: "Gateway EMQX com TLS mútua (mTLS) terminando no Ingestion Engine Go e Kafka.",
+            decisions: [
+              "AD-1: Adoção de MQTT com mTLS para conexão de dispositivos embarcados",
+              "AD-2: Barramento Apache Kafka particionado por vehicle_id",
+            ],
             components: ["C-1: Broker MQTT", "C-2: Ingestion Engine", "C-3: Kafka Event Stream"],
           },
           dataModelSummary: "Coordenadas GPS de frotas, identificação de motoristas e status de ignição.",
@@ -789,11 +831,11 @@ export const AGENTS_CATALOG: Record<string, AgentMetadata> = {
         description: "Cenários BDD para validação de latência < 2s, tolerância a desconexão 4G e integridade de ordens SAP.",
         input: {
           specId: "F-FLEET-001",
-          specBody: "Plataforma de telemetria veicular para 50k caminhões simultâneos com push WebSockets instantâneo.",
+          specBody: "# PRD FleetPulse\n\n## Requisitos Funcionais\n- RF-01: Ingestão de telemetria a cada 5 segundos\n- RF-02: Emissão e exibição de alertas < 2 segundos\n- RF-03: Sincronização de custos com ERPs\n\n## Critérios de Aceitação\n- AC-1: Dispositivo OBD envia telemetria e mensagem chega ao despachante em < 2 segundos @test\n- AC-2: Falha de conexão 4G retém dados no buffer local e faz replay em ordem cronológica @test\n- AC-3: Evento de superaquecimento dispara alerta sonoro no dashboard @test",
           acListFromSpec: [
-            "AC-1: Dispositivo OBD envia telemetria e mensagem chega ao despachante em < 2 segundos",
-            "AC-2: Falha de conexão 4G retém dados no buffer local e faz replay em ordem cronológica",
-            "AC-3: Evento de superaquecimento dispara alerta sonoro no dashboard",
+            "AC-1",
+            "AC-2",
+            "AC-3",
           ],
           softwareArchSummary: "Workers Go decodificam OBD e gravam no Kafka particionado por vehicle_id.",
           dataModelSummary: "Hypertables no TimescaleDB com particionamento de 1 dia.",
@@ -848,6 +890,12 @@ export const AGENTS_CATALOG: Record<string, AgentMetadata> = {
           specBody: "Implementação completa da plataforma de telemetria veicular FleetPulse.",
           architect: {
             summary: "Arquitetura distribuída com Ingestion Engine (Go), barramento Kafka e API Fastify.",
+            decisions: [
+              "AD-1: Broker MQTT EMQX para terminação de dispositivos embarcados",
+              "AD-2: Barramento assíncrono Kafka particionado por vehicle_id",
+              "AD-3: TimescaleDB para persistência de séries temporais",
+              "AD-4: Servidor WebSockets Fastify para broadcast ao operador",
+            ],
             components: [
               "C-1: IoTMessageGateway (Broker MQTT)",
               "C-2: IngestionEngine (Go Worker)",

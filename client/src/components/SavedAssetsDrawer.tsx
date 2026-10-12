@@ -2427,7 +2427,6 @@ export const SavedAssetsDrawer: React.FC<SavedAssetsDrawerProps> = ({
         isOpen={isNewScenarioModalOpen}
         onClose={() => setIsNewScenarioModalOpen(false)}
         onSave={handleConfirmSaveNewScenario}
-        defaultTitle={`${editingPresetTitle || "Cenário"} (Novo)`}
       />
     </div>
   );

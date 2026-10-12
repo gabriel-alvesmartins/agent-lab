@@ -1,7 +1,10 @@
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { createRequire } from "node:module";
 import { z } from "zod";
 import { saveExperiment } from "./db.js";
+import { enrichFallbackOutput } from "./agentEnricher.js";
+import { resolveDynamicModelId } from "./modelDiscovery.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -11,6 +14,8 @@ const PLATFORM_ROOT = path.resolve(__dirname, "../../ai-4sdlc-platform");
 const AGENTS_DIST_PATH = pathToFileURL(path.resolve(PLATFORM_ROOT, "packages/agents/dist/index.js")).href;
 const CORE_DIST_PATH = pathToFileURL(path.resolve(PLATFORM_ROOT, "packages/core/dist/index.js")).href;
 const CORE_FACTORY_PATH = pathToFileURL(path.resolve(PLATFORM_ROOT, "packages/core/dist/factory.js")).href;
+
+const platformRequire = createRequire(path.resolve(PLATFORM_ROOT, "packages/core/package.json"));
 
 let _agentsModule: Record<string, any> | null = null;
 let _coreModule: Record<string, any> | null = null;
@@ -43,6 +48,101 @@ async function getFactoryModule() {
     }
   }
   return _factoryModule;
+}
+
+/**
+ * Resolve e instancia um LanguageModel compatível com o Vercel AI SDK 7,
+ * injetando credenciais e o cabeçalho 'anthropic-workspace-id' para chaves Anthropic sk-ant-usr-.
+ */
+export async function resolveLanguageModel(modelId: string) {
+  const colon = modelId.indexOf(":");
+  const provider = colon >= 0 ? modelId.slice(0, colon) : "anthropic";
+  const rawModelName = colon >= 0 ? modelId.slice(colon + 1) : modelId;
+  const modelName = await resolveDynamicModelId(provider, rawModelName);
+
+  if (provider === "anthropic") {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    const workspaceId = process.env.ANTHROPIC_WORKSPACE_ID?.trim();
+
+    if (apiKey?.startsWith("sk-ant-usr-") && !workspaceId) {
+      throw new Error(
+        "A chave ANTHROPIC_API_KEY no arquivo .env é uma chave de usuário pessoal (iniciada com 'sk-ant-usr-'). A API da Anthropic exige a especificação do Workspace ID.\n\n" +
+        "👉 Como resolver:\n" +
+        "1. Abra seu Console Anthropic (console.anthropic.com) > Workspaces > Settings;\n" +
+        "2. Copie o Workspace ID (ex: wrkspc_01...);\n" +
+        "3. No arquivo .env do agent-lab, preencha: ANTHROPIC_WORKSPACE_ID=wrkspc_...\n\n" +
+        "Alternativas:\n" +
+        "• Gerar uma chave scoped diretamente ao Workspace (sk-ant-api03-...);\n" +
+        "• Selecionar Google Gemini ou outro modelo no seletor de modelos do cabeçalho;\n" +
+        "• Alternar para o Modo Offline (Mock) para validação sintética imediata."
+      );
+    }
+
+    try {
+      const anthropicPkg = platformRequire("@ai-sdk/anthropic");
+      const factoryOpts: Record<string, any> = {};
+      if (apiKey) factoryOpts.apiKey = apiKey;
+      if (process.env.ANTHROPIC_BASE_URL) factoryOpts.baseURL = process.env.ANTHROPIC_BASE_URL;
+
+      const headers: Record<string, string> = {};
+      if (workspaceId) {
+        headers["anthropic-workspace-id"] = workspaceId;
+      }
+      if (Object.keys(headers).length > 0) {
+        factoryOpts.headers = headers;
+      }
+
+      const customAnthropic = anthropicPkg.createAnthropic(factoryOpts);
+      return customAnthropic(modelName);
+    } catch (e: any) {
+      if (e.message?.includes("sk-ant-usr-")) throw e;
+      console.warn(`[agent-lab] Falha ao criar Anthropic via @ai-sdk/anthropic:`, e.message);
+    }
+  }
+
+  if (provider === "google") {
+    try {
+      const googlePkg = platformRequire("@ai-sdk/google");
+      const factoryOpts: Record<string, any> = {};
+      if (process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
+        factoryOpts.apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+      }
+      if (process.env.GOOGLE_BASE_URL) factoryOpts.baseURL = process.env.GOOGLE_BASE_URL;
+
+      const customGoogle = googlePkg.createGoogleGenerativeAI(factoryOpts);
+      return customGoogle(modelName);
+    } catch (e: any) {
+      console.warn(`[agent-lab] Falha ao criar Google via @ai-sdk/google:`, e.message);
+    }
+  }
+
+  if (provider === "openai") {
+    try {
+      const openaiPkg = platformRequire("@ai-sdk/openai");
+      const factoryOpts: Record<string, any> = {};
+      if (process.env.OPENAI_API_KEY) factoryOpts.apiKey = process.env.OPENAI_API_KEY;
+      if (process.env.OPENAI_BASE_URL) factoryOpts.baseURL = process.env.OPENAI_BASE_URL;
+
+      const customOpenAI = openaiPkg.createOpenAI(factoryOpts);
+      return customOpenAI(modelName);
+    } catch (e: any) {
+      console.warn(`[agent-lab] Falha ao criar OpenAI via @ai-sdk/openai:`, e.message);
+    }
+  }
+
+  if (provider === "ollama") {
+    try {
+      const ollamaPkg = platformRequire("ollama-ai-provider-v2");
+      const customOllama = ollamaPkg.createOllama({
+        baseURL: process.env.OLLAMA_BASE_URL || "http://localhost:11434/api",
+      });
+      return customOllama(modelName);
+    } catch (e: any) {
+      console.warn(`[agent-lab] Falha ao criar Ollama via ollama-ai-provider-v2:`, e.message);
+    }
+  }
+
+  return undefined;
 }
 
 // Mapeamento dos nomes para os objetos de agente exportados
@@ -114,14 +214,39 @@ export async function validateAgentInput(agentName: string, input: unknown) {
 
 export async function getAgentSchemas(agentName: string) {
   const agent = await getAgentInstance(agentName);
-  const inputSchemaJson =
-    typeof agent.inputSchema?.toJSONSchema === "function"
-      ? agent.inputSchema.toJSONSchema()
-      : null;
-  const outputSchemaJson =
-    typeof agent.outputSchema?.toJSONSchema === "function"
-      ? agent.outputSchema.toJSONSchema()
-      : null;
+  let inputSchemaJson: any = null;
+  try {
+    inputSchemaJson =
+      typeof agent.inputSchema?.toJSONSchema === "function"
+        ? agent.inputSchema.toJSONSchema()
+        : null;
+  } catch {
+    if (agent.inputSchema?.shape) {
+      inputSchemaJson = {
+        type: "object",
+        properties: Object.fromEntries(
+          Object.keys(agent.inputSchema.shape).map((k) => [k, { type: "string" }])
+        ),
+      };
+    }
+  }
+
+  let outputSchemaJson: any = null;
+  try {
+    outputSchemaJson =
+      typeof agent.outputSchema?.toJSONSchema === "function"
+        ? agent.outputSchema.toJSONSchema()
+        : null;
+  } catch {
+    if (agent.outputSchema?.shape) {
+      outputSchemaJson = {
+        type: "object",
+        properties: Object.fromEntries(
+          Object.keys(agent.outputSchema.shape).map((k) => [k, { type: "string" }])
+        ),
+      };
+    }
+  }
 
   return {
     agentName,
@@ -290,13 +415,20 @@ export async function runAgentIsolated(opts: RunAgentOptions) {
 
     if (mode === "llm") {
       process.env.SDLC_AGENT_FALLBACK = "0";
-      const core = await getCoreModule();
-      if (core && core.modelById) {
-        const modelId = agentConfig?.modelId || modelOverride || "anthropic:claude-sonnet-4-6";
-        try {
-          resolvedModel = core.modelById(modelId);
-        } catch (mErr: any) {
-          console.warn(`Não foi possível inicializar modelo ${modelId}:`, mErr.message);
+      const modelId = agentConfig?.modelId || modelOverride || "anthropic:claude-sonnet-5-5";
+      try {
+        resolvedModel = await resolveLanguageModel(modelId);
+      } catch (rErr: any) {
+        throw rErr;
+      }
+      if (!resolvedModel) {
+        const core = await getCoreModule();
+        if (core && core.modelById) {
+          try {
+            resolvedModel = core.modelById(modelId);
+          } catch (mErr: any) {
+            console.warn(`Não foi possível inicializar modelo ${modelId}:`, mErr.message);
+          }
         }
       }
     } else {
@@ -360,84 +492,14 @@ export async function runAgentIsolated(opts: RunAgentOptions) {
       agent.outputSchema = originalOutputSchema;
     }
 
-    // Se estiver em modo offline/fallback e for SolutionArchitect com saída placeholder de 1 decisão,
-    // enriquece com o modelo arquitetural completo (4 ADRs, 8 componentes, riscos, open questions e C4)
-    if (
-      mode === "fallback" &&
-      agentName === "SolutionArchitect" &&
-      Array.isArray(output?.decisions) &&
-      output.decisions.length <= 1
-    ) {
+    // Enriquecimento determinístico de alta fidelidade para os 15 agentes em modo fallback/offline
+    if (mode === "fallback") {
       const isCustomV2 =
         agentConfig?.promptMode === "override" ||
         Boolean(agentConfig?.promptAppend?.trim()) ||
         Boolean(customOutputZod);
 
-      const baseDecisions = [
-        "AD-1: Adoção do protocolo MQTT via EMQX para conexão de dispositivos embarcados | rationale: Redução drástica de overhead de rede em conexões móveis 2G/3G/4G instáveis em comparação ao HTTPS | quality_driver: reliability | build_vs_buy: buy | alternatives: HTTPS REST Gateway (rejeitada: overhead de handshake TLS); CoAP (rejeitada: ecossistema limitado) | reversible: true",
-        "AD-2: Uso de Apache Kafka como backbone assíncrono particionado por vehicle_id | rationale: Garante ordenação estrita de eventos temporais por veículo e absorção de picos de até 15.000 eps sem backpressure | quality_driver: scalability | build_vs_buy: buy | alternatives: RabbitMQ (rejeitada: menor throughput de streaming); AWS SQS (rejeitada: falta de garantia de ordem) | reversible: false",
-        "AD-3: TimescaleDB para armazenamento de telemetria histórica | rationale: Permite consultas analíticas de séries temporais com compressão nativa de 90% mantendo ecossistema SQL | quality_driver: performance | build_vs_buy: reuse | alternatives: InfluxDB (rejeitada: menor interoperabilidade SQL); MongoDB (rejeitada: CPU excessiva) | reversible: true",
-        "AD-4: WebSocket dedicado com Push Gateway no Fastify para atualização da tela | rationale: Atende à latência ponta-a-ponta < 2s sem polling | quality_driver: performance | build_vs_buy: make | alternatives: SSE (rejeitada: comunicação estritamente unidirecional); Long Polling (rejeitada: latência imprevisível) | reversible: true",
-      ];
-
-      if (isCustomV2) {
-        baseDecisions.push(
-          "AD-5 (v2 Custom): Buffer em memória Redis Cluster para sessões ativas | rationale: Redução de 40% na carga de consulta instantânea aos despachantes | quality_driver: performance | build_vs_buy: buy | reversible: true"
-        );
-      }
-
-      output = {
-        summary: isCustomV2
-          ? "Arquitetura orientada a eventos otimizada (v2 Customizada) para ingestão massiva de telemetria (15k eps), integrando MQTT/EMQX, Apache Kafka, TimescaleDB e caching em memória com WebSockets."
-          : "Arquitetura orientada a eventos para ingestão massiva de telemetria veicular em alta escala (15k eps), combinando protocolo MQTT para borda, Apache Kafka para desacoplamento de fluxo, TimescaleDB para séries temporais e API Fastify/WebSockets para push em tempo real aos despachantes.",
-        decisions: baseDecisions,
-        components: [
-          "C-1: IoTMessageGateway | Broker MQTT para recepção dos dados dos veículos | deps: -",
-          "C-2: IngestionEngine | Worker de alta performance para validação de checksum e descompressão | deps: IoTMessageGateway; EventStream",
-          "C-3: EventStream | Barramento Kafka desacoplador de eventos de telemetria | deps: -",
-          "C-4: RulesEngine | Processador de eventos complexos (CEP) e detecção de anomalias em tempo real | deps: EventStream; TelemetryStore",
-          "C-5: CoreApi | API GraphQL e servidor WebSockets para despachantes | deps: EventStream; TransactionalDB; TelemetryStore",
-          "C-6: FrontendDashboard | Interface web interativa para os operadores de logística | deps: CoreApi",
-          "C-7: TelemetryStore | Banco de séries temporais de alta densidade | deps: -",
-          "C-8: TransactionalDB | Banco relacional para dados de cadastro e segurança | deps: -",
-        ],
-        risks: [
-          "R-1: Rajada de reconexões MQTT (thundering herd) em quedas de sinal 4G em túneis | high/high | mitigation: Jitter aleatório e rate-limiting no EMQX.",
-          "R-2: Crescimento acelerado do volume em disco das séries temporais | medium/high | mitigation: Data retention automatizada com compressão após 30 dias.",
-        ],
-        open_questions: [
-          "Qual o SLA de retenção em tier quente vs frio para os dados do barramento CAN?",
-          "Será necessário suporte a protocolo legado OBD-II via SMS em áreas de sombra de conectividade celular?",
-          "Qual a janela máxima de tolerância para sincronização assíncrona com os ERPs SAP e TOTVS?",
-        ],
-        c4Context: `C4Context
-  title FleetPulse - Monitoramento de Frotas (Nível 1: Contexto de Sistema)
-  Person(despachante, "Despachante Operacional", "Supervisiona a frota em tempo real via dashboard web")
-  Person(motorista, "Motorista de Carga", "Conduz o veículo monitorado por telemetria")
-  System(fleetpulse, "Plataforma FleetPulse", "Ingestão massiva de telemetria, detecção de anomalias e push de alertas")
-  System_Ext(erp, "ERP Corporativo (SAP/TOTVS)", "Sincronização de custos de manutenção e odômetro")
-  System_Ext(emqx, "Broker MQTT (EMQX)", "Terminação TLS e conexão contínua com os módulos OBD-II")
-  Rel(motorista, fleetpulse, "Transmite telemetria CAN/GPS via módulo embarcado", "MQTT / 4G")
-  Rel(fleetpulse, despachante, "Envia alertas e posições atualizadas < 2s", "WebSocket / TLS")
-  Rel(fleetpulse, erp, "Sincroniza custos e odômetro", "HTTPS / REST")`,
-        c4Container: `C4Container
-  title FleetPulse - Arquitetura de Containers (Nível 2: Containers Macro)
-  Person(despachante, "Despachante Operacional", "Visualiza mapas e alertas operacionais")
-  Container(frontend, "Frontend Dashboard", "React + Tailwind + WebSockets", "Interface de monitoramento em tempo real")
-  Container(gateway, "IoT Message Gateway", "EMQX Broker / Node", "Ingestão e descompressão de mensagens MQTT")
-  Container(kafka, "Event Stream (Kafka)", "Apache Kafka", "Backbone assíncrono particionado por vehicle_id")
-  Container(rules, "Rules Engine", "Go / Flink Worker", "Processamento de eventos complexos e alertas imediatos")
-  Container(api, "Core API", "Fastify / Node.js", "API REST e servidor WebSockets para push")
-  ContainerDb(timescale, "Telemetry Store", "TimescaleDB", "Banco de dados otimizado para séries temporais")
-  ContainerDb(postgres, "Transactional DB", "PostgreSQL", "Dados cadastrais de frotas e credenciais")
-  Rel(despachante, frontend, "Acessa dashboard", "HTTPS")
-  Rel(frontend, api, "Conecta para receber push de eventos", "WSS / JSON")
-  Rel(gateway, kafka, "Publica eventos brutos de telemetria", "Kafka Wire")
-  Rel(kafka, rules, "Consome stream de eventos", "Kafka Consumer")
-  Rel(kafka, timescale, "Persiste séries temporais", "Batch Insert")
-  Rel(rules, api, "Dispara notificação de violação", "gRPC / Event")
-  Rel(api, postgres, "Consulta metadados de veículos", "SQL")`,
-      };
+      output = enrichFallbackOutput(agentName, output, validation.data, isCustomV2);
     }
 
     const elapsedMs = Date.now() - startedAt;
@@ -484,10 +546,29 @@ export async function runAgentIsolated(opts: RunAgentOptions) {
     };
   } catch (err: any) {
     const elapsedMs = Date.now() - startedAt;
+    let errorMessage = err.message || "Erro desconhecido durante execução do agente";
+    const llmErrorEvent = auditEvents.find(e => e.type === "llm.error" || e.type === "llm.fallback");
+    const fullErrorContext = `${errorMessage} ${JSON.stringify(llmErrorEvent?.payload || {})}`;
+
+    if (
+      fullErrorContext.includes("anthropic-workspace-id") ||
+      fullErrorContext.includes("not scoped to a workspace")
+    ) {
+      errorMessage =
+        "A chave ANTHROPIC_API_KEY no arquivo .env é uma chave de usuário pessoal (iniciada com 'sk-ant-usr-'). A API da Anthropic exige a especificação de um Workspace ID válido para autorizar a requisição.\n\n" +
+        "👉 Como resolver:\n" +
+        "1. Acesse o Console da Anthropic (https://console.anthropic.com) > Workspaces > Escolha seu Workspace > Settings (ou Configurações);\n" +
+        "2. Copie o identificador do Workspace (inicia com 'wrkspc_...');\n" +
+        "3. Abra o arquivo agent-lab/.env e defina: ANTHROPIC_WORKSPACE_ID=wrkspc_...\n\n" +
+        "Alternativas imediatas:\n" +
+        "• Gerar uma chave criada diretamente dentro de um Workspace (iniciada com 'sk-ant-api03-...');\n" +
+        "• Selecionar Google Gemini ou outro modelo no seletor de modelos do topo;\n" +
+        "• Alternar para o Modo Offline (Mock) para validação sintética instantânea sem chaves.";
+    }
     return {
       success: false,
       agentName,
-      error: err.message || "Erro desconhecido durante execução do agente",
+      error: errorMessage,
       stack: err.stack,
       elapsedMs,
       auditEvents,
@@ -630,7 +711,7 @@ export async function runAgentAB(opts: RunAgentABOptions) {
   const savedExp = saveExperiment({
     agentId: agentName,
     title: `Experimento A/B — ${agentName} (${versionAName} vs ${versionBName})`,
-    modelId: modelOverride || "anthropic:claude-sonnet-4-6",
+    modelId: modelOverride || "anthropic:claude-sonnet-5-5",
     mode,
     input,
     versionAName,
@@ -694,6 +775,14 @@ function formatMarkdownFromOutput(agentName: string, output: any): string {
     sections.push(`## Sumário Executivo\n\n${output.summary}\n`);
   }
 
+  // PM
+  if (output.body) {
+    sections.push(`## Especificação Canônica (PRD)\n\n${output.body}\n`);
+  } else if (output.spec && typeof output.spec === "object") {
+    sections.push(`## Especificação Canônica (PRD)\n\n\`\`\`json\n${JSON.stringify(output.spec, null, 2)}\n\`\`\`\n`);
+  }
+
+  // Discovery & Problem
   if (output.problemStatement) {
     sections.push(`## Declaração do Problema\n\n${output.problemStatement}\n`);
   }
@@ -706,6 +795,28 @@ function formatMarkdownFromOutput(agentName: string, output: any): string {
     sections.push(`## Jobs-To-Be-Done (JTBD)\n\n${output.jobsToBeDone.map((j: string) => `- ${j}`).join("\n")}\n`);
   }
 
+  if (Array.isArray(output.assumptions) && output.assumptions.length > 0) {
+    sections.push(`## Premissas & Suposições\n\n${output.assumptions.map((a: string) => `- ${a}`).join("\n")}\n`);
+  }
+
+  if (Array.isArray(output.successSignals) && output.successSignals.length > 0) {
+    sections.push(`## Sinais de Sucesso\n\n${output.successSignals.map((s: string) => `- 🎯 ${s}`).join("\n")}\n`);
+  }
+
+  // TierClassifier & RiskElicitor
+  if (output.tier) {
+    sections.push(`## Classificação de Risco (Tier)\n\n- **Tier Atribuído**: \`${String(output.tier).toUpperCase()}\`\n- **Método**: \`${output.method || "ISO 27005"}\`\n- **Score Máximo L×I**: \`${output.score_max_li ?? output.scoring?.score_max ?? "N/A"}\`\n\n**Justificativa**:\n${output.justification || "Sem justificativa formal."}\n`);
+  }
+
+  if (Array.isArray(output.controls_required) && output.controls_required.length > 0) {
+    sections.push(`## Controles Mandatórios Exigidos\n\n${output.controls_required.map((c: string) => `- [x] ${c}`).join("\n")}\n`);
+  }
+
+  if (output.scoring) {
+    sections.push(`## Score de Risco Quantitativo (ISO 27005)\n\n- **Probabilidade Máxima (L)**: ${output.scoring.likelihood_max ?? "N/A"}\n- **Impacto Máximo (I)**: ${output.scoring.impact_max ?? "N/A"}\n- **Score Global L×I**: **${output.scoring.score_max ?? "N/A"}**\n`);
+  }
+
+  // Architects C4 Diagrams & ADRs
   if (output.c4Context) {
     sections.push(`## Diagrama C4 Nível 1 (System Context)\n\n\`\`\`mermaid\n${output.c4Context}\n\`\`\`\n`);
   }
@@ -726,20 +837,125 @@ function formatMarkdownFromOutput(agentName: string, output: any): string {
     sections.push(`## Matriz de Riscos & Mitigações\n\n${output.risks.map((r: string) => `- ${r}`).join("\n")}\n`);
   }
 
-  if (output.spec && typeof output.spec === "object") {
-    sections.push(`## Especificação Canônica (PRD)\n\n\`\`\`markdown\n${JSON.stringify(output.spec, null, 2)}\n\`\`\`\n`);
+  // UX
+  if (Array.isArray(output.userFlows) && output.userFlows.length > 0) {
+    sections.push(`## Fluxos de Usuário & Interação (UX)\n\n${output.userFlows.map((f: string) => `- **${f}**`).join("\n\n")}\n`);
+  }
+
+  if (Array.isArray(output.wireframes) && output.wireframes.length > 0) {
+    sections.push(`## Wireframes Operacionais\n\n${output.wireframes.map((w: string) => `\`\`\`text\n${w}\n\`\`\``).join("\n\n")}\n`);
+  }
+
+  if (output.designSystemNotes) {
+    sections.push(`## Diretrizes do Design System\n\n${output.designSystemNotes}\n`);
+  }
+
+  if (Array.isArray(output.accessibilityConsiderations) && output.accessibilityConsiderations.length > 0) {
+    sections.push(`## Acessibilidade & Ergonomia (WCAG)\n\n${output.accessibilityConsiderations.map((a: string) => `- ♿ ${a}`).join("\n")}\n`);
+  }
+
+  // UI
+  if (Array.isArray(output.frames) && output.frames.length > 0) {
+    sections.push(`## Telas & Frames de Interface (UI)\n\n${output.frames.map((f: string) => `- 🖥️ ${f}`).join("\n")}\n`);
+  }
+
+  if (Array.isArray(output.designTokens) && output.designTokens.length > 0) {
+    sections.push(`## Design Tokens (Tailwind CSS)\n\n${output.designTokens.map((t: string) => `- \`${t}\``).join("\n")}\n`);
+  }
+
+  if (output.fallbackHtml) {
+    sections.push(`## Código de Protótipo (HTML + Tailwind)\n\n\`\`\`html\n${output.fallbackHtml}\n\`\`\`\n`);
+  }
+
+  // DataArchitect
+  if (Array.isArray(output.entities) && output.entities.length > 0) {
+    sections.push(`## Entidades de Dados (DER)\n\n${output.entities.map((e: string) => `- \`${e}\``).join("\n")}\n`);
+  }
+
+  if (Array.isArray(output.relationships) && output.relationships.length > 0) {
+    sections.push(`## Relacionamentos de Dados\n\n${output.relationships.map((r: string) => `- ${r}`).join("\n")}\n`);
   }
 
   if (output.ddl) {
-    sections.push(`## Scripts DDL (PostgreSQL)\n\n\`\`\`sql\n${output.ddl}\n\`\`\`\n`);
+    sections.push(`## Scripts DDL (PostgreSQL & TimescaleDB)\n\n\`\`\`sql\n${output.ddl}\n\`\`\`\n`);
   }
 
+  if (Array.isArray(output.retentionPolicy) && output.retentionPolicy.length > 0) {
+    sections.push(`## Políticas de Retenção & Expurgo (LGPD)\n\n${output.retentionPolicy.map((rp: string) => `- ⏱️ ${rp}`).join("\n")}\n`);
+  }
+
+  // DevOps
+  if (output.deploymentTopology) {
+    sections.push(`## Topologia de Deployment (Kubernetes / Nuvem)\n\n${output.deploymentTopology}\n`);
+  }
+
+  if (Array.isArray(output.slos) && output.slos.length > 0) {
+    sections.push(`## Objetivos de Nível de Serviço (SLOs)\n\n${output.slos.map((s: string) => `- 📈 **${s}**`).join("\n")}\n`);
+  }
+
+  if (Array.isArray(output.slis) && output.slis.length > 0) {
+    sections.push(`## Indicadores de Nível de Serviço (SLIs / Prometheus)\n\n${output.slis.map((s: string) => `- \`${s}\``).join("\n")}\n`);
+  }
+
+  if (output.observabilitySpec) {
+    sections.push(`## Especificação de Observabilidade (OpenTelemetry)\n\n${output.observabilitySpec}\n`);
+  }
+
+  if (Array.isArray(output.runbookHints) && output.runbookHints.length > 0) {
+    sections.push(`## Guias Operacionais (Runbooks)\n\n${output.runbookHints.map((r: string) => `- 🛠️ ${r}`).join("\n")}\n`);
+  }
+
+  // Security
+  if (Array.isArray(output.threats) && output.threats.length > 0) {
+    sections.push(`## Modelagem de Ameaças (STRIDE)\n\n| ID | Categoria | Título | Severidade | Mitigação |\n|---|---|---|---|---|\n${output.threats.map((t: any) => `| ${t.id || "-"} | **${t.strideCategory || "-"}** | ${t.title || "-"} | \`${t.severity || "-"}\` | ${t.mitigation || "-"} |`).join("\n")}\n`);
+  }
+
+  if (output.sbom_hash) {
+    sections.push(`## Integridade de Supply Chain\n\n- **SBOM Hash**: \`${output.sbom_hash}\`\n- **Open Secrets Check**: \`${output.open_secrets_check || "passed"}\`\n- **Decisão**: **${output.decision || "approved"}**\n`);
+  }
+
+  // Compliance
+  if (Array.isArray(output.applicableFrameworks) && output.applicableFrameworks.length > 0) {
+    sections.push(`## Marcos Regulatórios Aplicáveis\n\n${output.applicableFrameworks.map((f: string) => `- ⚖️ **${f}**`).join("\n")}\n`);
+  }
+
+  if (Array.isArray(output.legalBases) && output.legalBases.length > 0) {
+    sections.push(`## Enquadramento de Bases Legais (LGPD)\n\n${output.legalBases.map((b: any) => `- **${b.purpose || "Finalidade"}**: ${b.basis || ""} (${b.lgpdArticle || ""})\n  *Justificativa*: ${b.rationale || ""}`).join("\n\n")}\n`);
+  }
+
+  if (Array.isArray(output.dataSubjectRights) && output.dataSubjectRights.length > 0) {
+    sections.push(`## Direitos dos Titulares (DSR)\n\n| Direito | Como Atendido | SLA Legal |\n|---|---|---|\n${output.dataSubjectRights.map((d: any) => `| **${d.right}** | ${d.howSupportedInProduct} | \`${d.sla}\` |`).join("\n")}\n`);
+  }
+
+  if (output.dpiaSummary) {
+    sections.push(`## Relatório de Impacto à Proteção de Dados (DPIA)\n\n${output.dpiaSummary}\n`);
+  }
+
+  // QA
+  if (Array.isArray(output.test_cases) && output.test_cases.length > 0) {
+    sections.push(`## Casos de Teste BDD (Given / When / Then)\n\n${output.test_cases.map((tc: any) => `### [${tc.id}] ${tc.title} (${tc.ac_ref || "AC"})\n- **Given**: ${tc.given}\n- **When**: ${tc.when}\n- **Then**: ${tc.then}\n- *Arquivo de Teste*: \`${tc.test_path || "tests/spec.test.ts"}\``).join("\n\n")}\n`);
+  }
+
+  if (output.coverage_by_ac && typeof output.coverage_by_ac === "object") {
+    sections.push(`## Cobertura de Critérios de Aceitação\n\n${Object.entries(output.coverage_by_ac).map(([ac, count]) => `- **${ac}**: ${count} caso(s) de teste vinculado(s)`).join("\n")}\n`);
+  }
+
+  // TechLead
   if (Array.isArray(output.tasks) && output.tasks.length > 0) {
-    sections.push(`## Tarefas Decompostas (DAG)\n\n${output.tasks.map((t: any) => typeof t === "string" ? `- ${t}` : `- [${t.id || "TASK"}] ${t.title || JSON.stringify(t)}`).join("\n")}\n`);
+    sections.push(`## Decomposição de Tarefas (DAG)\n\n| ID | Tarefa | Responsável | Estimativa | Grupo Paralelo | Dependências |\n|---|---|---|---|---|---|\n${output.tasks.map((t: any) => `| \`${t.id || "TASK"}\` | **${t.title || "-"}** | ${t.role || "-"} | ${t.estimate_hours ? t.estimate_hours + "h" : "-"} | \`${t.parallel_group || "-"}\` | ${Array.isArray(t.deps) && t.deps.length > 0 ? t.deps.join(", ") : "Nenhuma"} |`).join("\n")}\n`);
   }
 
-  if (Array.isArray(output.scenarios) && output.scenarios.length > 0) {
-    sections.push(`## Cenários BDD\n\n${output.scenarios.map((s: any) => typeof s === "string" ? `- ${s}` : `- **${s.title || "Cenário"}**:\n  Given ${s.given || ""}\n  When ${s.when || ""}\n  Then ${s.then || ""}`).join("\n\n")}\n`);
+  if (Array.isArray(output.critical_path) && output.critical_path.length > 0) {
+    sections.push(`## Caminho Crítico (Critical Path)\n\n\`${output.critical_path.join(" ➔ ")}\`\n\n- **Estimativa Total**: **${output.total_estimate_hours || 0} horas** de engenharia.\n`);
+  }
+
+  // Auditor
+  if (output.gateTarget) {
+    sections.push(`## Auditoria de Gate HITL\n\n- **Gate Avaliado**: \`${output.gateTarget}\`\n- **Status de Prontidão**: **${output.readyForGate ? "✅ APROVADO PARA AVANÇO" : "❌ BLOQUEADO POR INCONSISTÊNCIAS"}**\n- **Resumo de Controles**: ${output.controlsAuditSummary || "N/A"}\n`);
+  }
+
+  if (output.consistencyMatrix && typeof output.consistencyMatrix === "object") {
+    sections.push(`## Matriz de Coerência Inter-Artefatos\n\n${Object.entries(output.consistencyMatrix).map(([check, status]) => `- **${check}**: ${typeof status === "object" ? JSON.stringify(status) : status}`).join("\n")}\n`);
   }
 
   if (Array.isArray(output.open_questions) && output.open_questions.length > 0) {

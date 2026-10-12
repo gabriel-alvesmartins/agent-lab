@@ -17,6 +17,12 @@ import {
   updateExperiment,
   deleteExperiment,
 } from "./db.js";
+import {
+  discoverGoogleModels,
+  discoverAnthropicModels,
+  discoverOpenAIModels,
+  discoverOllamaModels,
+} from "./modelDiscovery.js";
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -243,35 +249,75 @@ app.delete("/api/experiments/:id", (req, res) => {
   res.json({ success });
 });
 
-// 6. Provedores e status de chaves de API
-app.get("/api/models", (_req, res) => {
+// 6. Provedores e status de chaves de API (com descoberta dinâmica em tempo real)
+app.get("/api/models", async (_req, res) => {
+  const [googleLive, anthropicLive, openAiLive, ollamaLive] = await Promise.all([
+    discoverGoogleModels(),
+    discoverAnthropicModels(),
+    discoverOpenAIModels(),
+    discoverOllamaModels(),
+  ]);
+
   const providers = {
     anthropic: {
       name: "Anthropic Claude",
       available: Boolean(process.env.ANTHROPIC_API_KEY),
-      models: [
-        "anthropic:claude-sonnet-4-6",
-        "anthropic:claude-haiku-4-5",
-        "anthropic:claude-opus-4-7",
-      ],
-      default: "anthropic:claude-sonnet-4-6",
+      models: Array.from(new Set([
+        "anthropic:claude-sonnet-5-5",
+        "anthropic:claude-haiku-5-5",
+        "anthropic:claude-opus-5-5",
+        ...anthropicLive.map((m) => `anthropic:${m}`),
+      ])),
+      default: "anthropic:claude-sonnet-5-5",
+      descriptions: {
+        "anthropic:claude-haiku-5-5": "Claude Haiku 5.5 — Rapidez, baixo custo e tarefas em alto volume (out/2026)",
+        "anthropic:claude-sonnet-5-5": "Claude Sonnet 5.5 — Equilíbrio ideal entre capacidade, velocidade e custo",
+        "anthropic:claude-opus-5-5": "Claude Opus 5.5 — Modelo de ponta para raciocínio complexo e arquitetura",
+      },
     },
     openai: {
       name: "OpenAI",
       available: Boolean(process.env.OPENAI_API_KEY),
-      models: ["openai:gpt-4o", "openai:gpt-4o-mini", "openai:gpt-4.5-preview"],
-      default: "openai:gpt-4o",
+      models: Array.from(new Set([
+        "openai:gpt-6-astra",
+        "openai:gpt-6-1-sol",
+        "openai:gpt-6-luna",
+        ...openAiLive.map((m) => `openai:${m}`),
+      ])),
+      default: "openai:gpt-6-astra",
+      descriptions: {
+        "openai:gpt-6-astra": "GPT-6 Astra — Modelo de ponta para raciocínio complexo e programação",
+        "openai:gpt-6-1-sol": "GPT-6.1 Sol — Alternativa de alto desempenho com menor custo",
+        "openai:gpt-6-luna": "GPT-6 Luna — Otimizado para eficiência máxima e tarefas em grande volume",
+      },
     },
     google: {
       name: "Google Gemini",
       available: Boolean(process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY),
-      models: ["google:gemini-1.5-pro", "google:gemini-1.5-flash", "google:gemini-2.0-flash"],
-      default: "google:gemini-2.0-flash",
+      models: Array.from(new Set([
+        "google:gemini-3-8-flash",
+        "google:gemini-4-argon",
+        "google:gemini-3-8-live-extended-thinking",
+        "google:gemini-3-8-live",
+        ...googleLive.slice(0, 8).map((m) => `google:${m}`),
+      ])),
+      default: "google:gemini-3-8-flash",
+      descriptions: {
+        "google:gemini-4-argon": "Gemini 4 Argon — Modelo de ponta para engenharia e defesa cibernética",
+        "google:gemini-3-8-flash": "Gemini 3.8 Flash — Modelo voltado à velocidade e eficiência em produção",
+        "google:gemini-3-8-live-extended-thinking": "Gemini 3.8 Live Extended Thinking — Linha especializada com raciocínio complexo",
+        "google:gemini-3-8-live": "Gemini 3.8 Live — Linha especializada em conversação e streaming em tempo real",
+      },
     },
     ollama: {
       name: "Ollama (Local)",
-      available: Boolean(process.env.OLLAMA_BASE_URL),
-      models: ["ollama:llama3.3", "ollama:qwen2.5-coder"],
+      available: Boolean(process.env.OLLAMA_BASE_URL || ollamaLive.length > 0),
+      models: Array.from(new Set([
+        "ollama:llama3.3",
+        "ollama:qwen2.5-coder",
+        "ollama:deepseek-r1",
+        ...ollamaLive.map((m) => `ollama:${m}`),
+      ])),
       default: "ollama:llama3.3",
     },
   };

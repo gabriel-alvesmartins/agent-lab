@@ -7,16 +7,22 @@ interface ScenarioModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (title: string) => void;
-  defaultTitle: string;
+  defaultTitle?: string;
 }
 
 export const ScenarioModal: React.FC<ScenarioModalProps> = ({
   isOpen,
   onClose,
   onSave,
-  defaultTitle,
+  defaultTitle = "",
 }) => {
   const [title, setTitle] = useState(defaultTitle);
+
+  React.useEffect(() => {
+    if (isOpen) {
+      setTitle(defaultTitle || "");
+    }
+  }, [isOpen, defaultTitle]);
 
   if (!isOpen) return null;
 

@@ -74,7 +74,7 @@ export function App() {
 
   // Estados de configuração de modelo e modo
   const [mode, setMode] = useState<"fallback" | "llm">("fallback");
-  const [selectedModel, setSelectedModel] = useState<string>("anthropic:claude-sonnet-4-6");
+  const [selectedModel, setSelectedModel] = useState<string>("anthropic:claude-sonnet-5-5");
   const [modelProviders, setModelProviders] = useState<ModelProvidersResponse | null>(null);
   const [serverOnline, setServerOnline] = useState<boolean>(true);
 
@@ -105,7 +105,12 @@ export function App() {
       });
 
     fetchModelProviders()
-      .then((data) => setModelProviders(data))
+      .then((data) => {
+        setModelProviders(data);
+        if (data?.providers?.anthropic?.default) {
+          setSelectedModel(data.providers.anthropic.default);
+        }
+      })
       .catch((err) => console.warn("Model providers indisponíveis:", err));
   }, []);
 
@@ -684,7 +689,6 @@ export function App() {
         isOpen={isSaveModalOpen}
         onClose={() => setIsSaveModalOpen(false)}
         onSave={handleSaveScenario}
-        defaultTitle={`${selectedAgentId} - Cenário Customizado`}
       />
 
       {/* Drawer de Histórico de Experimentos (Pop-up Central ao Clicar) */}

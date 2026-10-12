@@ -1,74 +1,200 @@
-# 🧪 Agent Lab — Laboratório de Testes de Agentes SDLC
+# 🧪 Agent Lab — SDLC Agent Workbench & Evaluation Lab
 
-> **Ambiente Independente de Avaliação e Testes Isolados dos 15 Agentes Canônicos da Plataforma AI-4SDLC.**  
-> Desenvolvido no âmbito do CEIA/UFG para acelerar a validação de prompts, schemas, contratos de entrada e saída e comportamentos dos agentes sem necessidade de executar a esteira completa de ponta a ponta.
+> **Ambiente Independente de Avaliação Isolada, Testes A/B e Engenharia de Prompts dos 15 Agentes Canônicos da Plataforma AI-4SDLC.**  
+> Desenvolvido no âmbito do CEIA/UFG para acelerar a calibração de prompts, validação de contratos Zod, ajuste de hiperparâmetros e auditoria de comportamento dos agentes sem necessidade de disparar a esteira completa de ponta a ponta.
 
 ---
 
 ## 🎯 Por que o Agent Lab foi criado?
 
-No ciclo de vida padrão do framework multi-agente (`feature.workflow.yml`), os 15 agentes estão encadeados ao longo de 5 fases e 8 gates HITL:
+No ciclo de vida padrão do framework multi-agente (`feature.workflow.yml`), os 15 agentes operam de forma encadeada ao longo de 5 fases e múltiplos gates de aprovação humana (*Human-in-the-Loop* - HITL):
 
 ```
 [Discovery] ──▶ [RiskElicitor] ──▶ [TierClassifier] ──▶ [PM] ──▶ [SolutionArchitect] ──▶ ... ──▶ [TechLead] ──▶ [Auditor]
 ```
 
-Para avaliar um agente no final do pipeline (ex: `DevOps`, `QA`, `Compliance`, `TechLead` ou `SoftwareArchitect`), era obrigatório passar por todo o fluxo prévio. O **Agent Lab** resolve esse gargalo oferecendo:
+Para avaliar o comportamento de agentes das fases finais (como `DevOps`, `QA`, `Compliance`, `TechLead` ou `SoftwareArchitect`), antes era necessário executar todo o pipeline prévio. O **Agent Lab** resolve esse gargalo fornecendo um laboratório de testes completo:
 
-1. **Execução 100% Isolada:** Teste qualquer agente unitariamente injetando inputs manuais ou presets prontos.
-2. **Spec-Driven Awareness:** Inspeção visual de *Papel*, *De quem recebe (Upstream Reads)* e *Para quem produz (Downstream)*.
+1. **Execução 100% Isolada:** Teste unitariamente qualquer agente fornecendo inputs manuais ou carregando cenários prontos com 1 clique.
+2. **Comparativo A/B Flexível:** Compare qualquer versão do agente lado a lado (Oficial SDLC, Configuração Atual ou Versões Customizadas Salvas) com análise estruturada de impacto e diff semântico.
 3. **Dual Execution Engine:**
-   - **Modo Offline (Zero Custo):** Executa o fallback determinístico do agente em milissegundos sem gastar tokens nem depender de chaves de API.
-   - **Modo LLM Real:** Disparo real contra Anthropic Claude, OpenAI, Google Gemini ou Ollama local.
-4. **Comparação por Diff Lado a Lado:** Compare a saída obtida com a saída esperada (Golden Reference).
-5. **Painéis Visuais Ricos:** Decisões ADRs formatadas, diagramas Mermaid C4 (Nível 1 e 2), DDL PostgreSQL, matrizes BDD e DAGs de tarefas.
-6. **Gestão de Cenários Customizados:** Salve suas próprias entradas diretamente no `localStorage` do navegador para reutilização futura.
-7. **Exportação com 1 Clique:** Baixe `input.json`, `output.json` e o artefato renderizado `artifact.md`.
+   - **Modo Offline (Mock Determinístico):** Resposta imediata em milissegundos sem consumo de tokens nem dependência de chaves de API.
+   - **Modo LLM Real:** Execução real contra provedores líderes (Anthropic Claude, OpenAI, Google Gemini ou modelos locais via Ollama).
+4. **Inspeção de Contratos & Schemas Zod:** Validação estrita em tempo de execução contra os esquemas de entrada (`inputSchema`) e saída (`outputSchema`).
+5. **Trilha de Auditoria & Governança SDLC:** Registro em tempo real de eventos emitidos pelo ciclo de vida do agente (`auditEvents`).
+6. **Alta Performance (Zero Lag):** Arquitetura desacoplada com estado local no editor, sincronização por debounce, memoização completa e aceleração gráfica limpa.
+
+---
+
+## ✨ Principais Funcionalidades
+
+### 1. Workbench de Entrada e Saída
+- **Editor de Input com Resposta Instantânea:** Digitação fluida e sem travamentos, com contagem de linhas e caracteres em tempo real e atalhos rápidos (`Ctrl+Enter` para executar, `Ctrl+⇧+Enter` para A/B).
+- **Formatador e Validador Integrados:** Formatação automática com indentação padronizada e checagem de erros de schema com destaque dos caminhos inválidos.
+- **Seletor Unificado de Cenários & Presets:** Entradas vazias por padrão para experimentação limpa, permitindo carregar cenários oficiais de teste ou salvar novas entradas personalizadas no `localStorage`.
+- **Modo Ampliar (Pop-up de Alta Resolução):** Botões `↗ Ampliar` fixados nos cantos superiores para expandir tanto o editor de entrada quanto o visualizador de saída em pop-ups amplos, ideais para diagramas C4 e payloads extensos.
+
+### 2. Painel de Saída Multifacetado
+- **Aba Estruturado:** Visualização rica e contextual por especialidade de agente:
+  - *Solution/Software Architect:* Diagramas Mermaid interativos (C4 Nível 1 Context e Nível 2 Container) com modal de zoom e cópia de código Mermaid, ADRs estruturadas (make/buy/reuse) e barramentos.
+  - *Data Architect:* DDL PostgreSQL completo com syntax highlighting e catálogo de tabelas/índices.
+  - *QA:* Matrizes de teste BDD (Given/When/Then), cobertura de cenários e casos de borda.
+  - *TechLead:* DAG de quebra de tarefas (WBS), dependências e estimativas de esforço.
+  - *PM:* Visão estruturada de visão de produto, requisitos funcionais (RF) e regras de negócio.
+- **Aba JSON:** JSON bruto formatado para inspeção e cópia direta.
+- **Aba Artefato .md:** Visualização do artefato markdown gerado pelo agente para a documentação do repositório.
+- **Aba Auditoria (Governança):** Trilha de auditoria estruturada exibindo os eventos do ciclo de vida (`agent.input`, `ARCHITECTURE_DEFINED`, etc.) com payloads e timestamps para rastreabilidade.
+- **Aba Comparativo A/B:** Ativada automaticamente em execuções A/B, exibindo o cartão de **Análise de Impacto** e o **Diff Semântico** entre Lado A e Lado B, com opção de *Adotar como Referência*.
+
+### 3. Telemetria e Métricas em Tempo Real
+Na barra de telemetria superior de cada execução:
+- **Latência:** Tempo de resposta em milissegundos (`ms`).
+- **Modo:** Indicação clara entre `Offline (Mock)` e `LLM Real`.
+- **Schema Zod:** Status de conformidade (`Validado` ou `Inválido`).
+- **Tamanho da Saída:** Peso do payload em `KB` e contagem total de caracteres.
+- **Tokens Estimados:** Estimativa instantânea de consumo de tokens (`~X tokens`).
+
+### 4. Customização e Gestão de Agentes
+- **Painel de Configurações do Agente:** Ajuste detalhado de:
+  - *Modo de Prompt:* Canônico, Append (adicionar regras) ou Override (substituição integral).
+  - *Modo de Raciocínio:* Standard, Reasoning ou Deep Thought.
+  - *Nível de Risco (Risk Tier):* Minimal, Limited ou High.
+  - *Hiperparâmetros:* Temperatura (0.0 a 1.0) e Esforço de Raciocínio (low, medium, high).
+  - *Ferramentas Ativas:* Habilitação e desabilitação de ferramentas da esteira.
+  - *Overrides de Schema:* Customização de schemas Zod de entrada e saída.
+- **Edição Direta de Agentes Salvos:** Altere versões customizadas existentes diretamente pelo botão **Editar Agente**, sem necessidade de clonar ou criar novos registros.
+- **Diálogos de Confirmação Seguros In-App:** Exclusão e confirmações através de modais seguros e integrados ao design system, eliminando pop-ups nativos do navegador.
+
+---
+
+## ⌨️ Atalhos de Teclado Globais
+
+| Atalho | Ação |
+|---|---|
+| <kbd>Ctrl</kbd> + <kbd>↵ Enter</kbd> | Executar o agente com a entrada e configuração ativa |
+| <kbd>Ctrl</kbd> + <kbd>⇧ Shift</kbd> + <kbd>↵ Enter</kbd> | Executar o Teste Comparativo A/B |
+| <kbd>Ctrl</kbd> + <kbd>H</kbd> | Abrir o Histórico de Experimentos |
+| <kbd>Esc</kbd> | Fechar modais, gavetas de configuração e pop-ups ampliados |
 
 ---
 
 ## 🚀 Como Iniciar
 
-No terminal, dentro da pasta `agent-lab`:
+### Pré-requisitos
+- **Node.js** >= 18.0.0
+- **pnpm** (recomendado) ou **npm**
+
+### Instalação e Execução
+
+No terminal, a partir da pasta raiz do `agent-lab`:
 
 ```bash
-cd agent-lab
+# 1. Instalar as dependências
 pnpm install
+
+# 2. Iniciar o ambiente de desenvolvimento completo
 pnpm dev
 ```
 
 O comando iniciará simultaneamente:
-- **Backend Runner API:** `http://localhost:3333`
-- **Frontend Web UI:** `http://localhost:5173`
+- **Backend API Runner:** `http://localhost:3333` (com watch automático de arquivos)
+- **Frontend Workbench UI:** `http://localhost:5173` (Vite HMR)
 
-Acesse `http://localhost:5173` no seu navegador.
+Abra `http://localhost:5173` no seu navegador para utilizar o laboratório.
 
----
+### Configuração de Provedores LLM (Opcional)
 
-## 📋 Catálogo dos 15 Agentes Cobertos
+Para utilizar o **Modo LLM Real**, configure suas chaves de API criando um arquivo `.env` na raiz do `agent-lab` (ou utilizando as variáveis globais do sistema):
 
-| # | Agente | Fase | Entrada Principal | Artefato Gerado |
-|---|---|---|---|---|
-| 1 | **Discovery** | 1. Descoberta | `brief` | `discovery_report` |
-| 2 | **RiskElicitor** | 2. Triagem | `brief`, `problemStatement` | `risk_inventory` (Sinais R1 a R9) |
-| 3 | **TierClassifier** | 2. Triagem | `riskInventory` | `tier_classification` (Minimal/Limited/High) |
-| 4 | **PM** | 2. PRD | `brief`, `discoveryReport` | `spec` (`spec.md` canônica) |
-| 5 | **SolutionArchitect** | 3. Macro Design | `specBody`, `discoveryReport` | `solution_architecture` (C4 L1-2, ADRs) |
-| 6 | **UX** | 3. Macro Design | `specBody`, `solutionArchSummary` | `ux_design` (Jornadas e Wireframes) |
-| 7 | **UI** | 3. Macro Design | `specBody`, `uxFlowsSummary` | `ui_mockups` (HTML/Tailwind) |
-| 8 | **SoftwareArchitect** | 4. Engenharia | `specBody`, `solutionArchSummary` | `software_architecture` (C4 L3-4) |
-| 9 | **DataArchitect** | 4. Engenharia | `specBody`, `solutionArchSummary` | `data_model` (DDL PostgreSQL, DER) |
-| 10 | **DevOps** | 4. Engenharia | `specBody`, `softwareArchSummary` | `devops_spec` (IaC, SLO/SLI) |
-| 11 | **Security** | 4. Engenharia | `specBody`, `architect` | `threat_model` (STRIDE) |
-| 12 | **Compliance** | 4. Engenharia | `specBody`, `dataModelSummary` | `compliance_assessment` (LGPD/DPIA) |
-| 13 | **QA** | 5. Qualidade | `specBody`, `acListFromSpec` | `test_strategy` (Cenários BDD) |
-| 14 | **TechLead** | 5. Síntese | `specBody`, `architect` | `task_breakdown` (DAG de Tarefas) |
-| 15 | **Auditor** | Todos os Gates | `collected_artifacts`, `gateTarget` | `audit_review` (Checklist de Qualidade) |
+```env
+# Provedores de Modelos de Linguagem
+ANTHROPIC_API_KEY=sua_chave_anthropic
+OPENAI_API_KEY=sua_chave_openai
+GEMINI_API_KEY=sua_chave_google
+
+# Configurações do Runner
+PORT=3333
+```
+
+> **Nota:** No modo `Offline (Mock)`, nenhuma chave de API é necessária. O runner utiliza respostas determinísticas pré-calibradas para desenvolvimento com custo zero.
 
 ---
 
-## 🛠️ Tecnologias Utilizadas
+## 📋 Catálogo dos 15 Agentes Canônicos
 
-- **Frontend:** React 19, TypeScript, Lucide Icons, Vite, Design System Vanilla CSS (Dark Mode com Glassmorphism).
-- **Backend:** Express, TypeScript (tsx), CORS, Dotenv, Zod.
-- **Engine de Agentes:** Importação e execução direta dos 15 agentes compilados em `@sdlc/agents` e `@sdlc/core`.
+| # | Agente | Fase SDLC | Entrada Principal (Input) | Artefato Produzido (Output) |
+|:---:|---|---|---|---|
+| **01** | **Discovery** | 1. Descoberta & Contexto | `brief` | `discovery_report` |
+| **02** | **RiskElicitor** | 2. Triagem & PRD | `brief`, `problemStatement` | `risk_inventory` (Sinais R1 a R9) |
+| **03** | **TierClassifier** | 2. Triagem & PRD | `riskInventory` | `tier_classification` (Minimal / Limited / High) |
+| **04** | **PM** | 2. Triagem & PRD | `brief`, `discoveryReport` | `spec` (`spec.md` canônica e RFs) |
+| **05** | **SolutionArchitect** | 3. Macro Design & UX | `specBody`, `discoveryReport` | `solution_architecture` (C4 L1-2, ADRs) |
+| **06** | **UX Designer** | 3. Macro Design & UX | `specBody`, `solutionArchSummary` | `ux_design` (Jornadas e Wireframes) |
+| **07** | **UI Designer** | 3. Macro Design & UX | `specBody`, `uxFlowsSummary` | `ui_mockups` (Componentes e Design Tokens) |
+| **08** | **SoftwareArchitect** | 4. Engenharia & Modelagem | `specBody`, `solutionArchSummary` | `software_architecture` (C4 L3-4, Design Patterns) |
+| **09** | **DataArchitect** | 4. Engenharia & Modelagem | `specBody`, `solutionArchSummary` | `data_model` (DDL PostgreSQL, DER, Índices) |
+| **10** | **DevOps** | 4. Engenharia & Modelagem | `specBody`, `softwareArchSummary` | `devops_spec` (IaC, CI/CD, SLO/SLI) |
+| **11** | **Security** | 4. Engenharia & Modelagem | `specBody`, `architect` | `threat_model` (Análise STRIDE, Mitigações) |
+| **12** | **Compliance** | 4. Engenharia & Modelagem | `specBody`, `dataModelSummary` | `compliance_assessment` (LGPD, DPIA, Governança) |
+| **13** | **QA** | 5. Qualidade & Governança | `specBody`, `acListFromSpec` | `test_strategy` (Cenários BDD Given/When/Then) |
+| **14** | **TechLead** | 5. Qualidade & Governança | `specBody`, `architect` | `task_breakdown` (DAG de Tarefas e WBS) |
+| **15** | **Auditor** | Todos os Gates | `collected_artifacts`, `gateTarget` | `audit_review` (Checklist de Conformidade de Gate) |
+
+---
+
+## 🏛️ Arquitetura do Sistema
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                        AGENT LAB FRONTEND (Vite)                       │
+│  ┌────────────────────────┐  ┌──────────────────────────────────────┐  │
+│  │     AgentSidebar       │  │           AgentSpecBanner            │  │
+│  │   Catálogo de Fases    │  │  Papel, Upstream/Downstream & Tags   │  │
+│  └────────────────────────┘  └──────────────────────────────────────┘  │
+│  ┌─────────────────────────────────┐  ┌─────────────────────────────┐  │
+│  │       InputEditor (Memo)        │  │     OutputViewer (Memo)     │  │
+│  │ - Local State (Zero Lag)        │  │ - Painéis C4 / DDL / BDD    │  │
+│  │ - Debounce de Sincronização     │  │ - Comparativo A/B & Diff    │  │
+│  │ - Cenários & Presets Unificados │  │ - Trilha de Auditoria SDLC  │  │
+│  │ - Botão Ampliar (Pop-up)        │  │ - Métricas (KB, chars, tok) │  │
+│  └─────────────────────────────────┘  └─────────────────────────────┘  │
+└────────────────────────────────────┬───────────────────────────────────┘
+                                     │ HTTP REST (JSON)
+                                     ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                        AGENT LAB BACKEND RUNNER                        │
+│  ┌──────────────────────┐  ┌─────────────────┐  ┌───────────────────┐  │
+│  │   Express API :3333  │  │  Catalog Loader │  │ Zod Schema Engine │  │
+│  │   /api/agents        │  │  15 Agentes     │  │ Validação Estrita │  │
+│  │   /api/run & run-ab  │  │  Presets Padrão │  │ de Contratos      │  │
+│  └──────────────────────┘  └─────────────────┘  └───────────────────┘  │
+│                         │                     │                        │
+│            ┌────────────┴──────────┐          │                        │
+│            ▼                       ▼          ▼                        │
+│   ┌─────────────────┐    ┌──────────────────────────────────────────┐  │
+│   │ Modo Offline    │    │ Modo LLM Real                            │  │
+│   │ Fallbacks Rápidos│   │ Claude / OpenAI / Gemini / Ollama Local  │  │
+│   └─────────────────┘    └──────────────────────────────────────────┘  │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🛠️ Tecnologias e Bibliotecas
+
+- **Frontend:**
+  - **Core:** React 19, TypeScript 5.8, Vite 6.
+  - **Componentes & Ícones:** Radix UI primitives, Lucide Icons, class-variance-authority (CVA).
+  - **Visualização de Diagramas:** Mermaid.js 12 (renderização gráfica de arquitetura C4).
+  - **Estilização:** Vanilla CSS com design tokens modernos (Dark Mode, paleta HSL Obsidian/Zinc, micro-animações performáticas e aceleração gráfica limpa).
+- **Backend:**
+  - **Servidor:** Node.js, Express, TypeScript via `tsx` (live reload com zero compilation delay).
+  - **Validação:** Zod 3.24 (tipagem e validação em tempo de execução).
+- **Persistência Local:** `localStorage` do navegador para cenários, versões customizadas e histórico de experimentos.
+
+---
+
+## 📄 Licença e Créditos
+
+Desenvolvido para a plataforma **AI-4SDLC** pelo **CEIA / UFG** (Centro de Excelência em Inteligência Artificial da Universidade Federal de Goiás).  
+Uso interno e acadêmico para aceleração da engenharia de software orientada a agentes inteligentes.

@@ -100,6 +100,36 @@ export const SpecPanel: React.FC<SpecPanelProps> = ({ output }) => {
           </div>
         </div>
       )}
+
+      {/* PRD Body Document (if output.body is provided) */}
+      {output.body && (
+        <div className="glass-card" style={{ padding: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+            <FileText size={16} className="text-emerald-400" />
+            <h4 style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--accent-emerald)" }}>
+              Documento de Especificação Completo (PRD Markdown)
+            </h4>
+          </div>
+          <pre
+            style={{
+              background: "var(--bg-surface-stage)",
+              padding: 12,
+              borderRadius: "var(--radius-sm)",
+              border: "1px solid var(--border-subtle)",
+              fontSize: 12,
+              fontFamily: "var(--font-mono)",
+              color: "#e4e4e7",
+              lineHeight: 1.6,
+              whiteSpace: "pre-wrap",
+              overflowX: "auto",
+              margin: 0,
+              maxHeight: 400,
+            }}
+          >
+            {output.body}
+          </pre>
+        </div>
+      )}
     </div>
   );
 };

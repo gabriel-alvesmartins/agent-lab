@@ -26,6 +26,14 @@ import { SpecPanel } from "./StructuredPanels/SpecPanel.js";
 import { DataModelPanel } from "./StructuredPanels/DataModelPanel.js";
 import { QaPanel } from "./StructuredPanels/QaPanel.js";
 import { TechLeadPanel } from "./StructuredPanels/TechLeadPanel.js";
+import { DiscoveryPanel } from "./StructuredPanels/DiscoveryPanel.js";
+import { GovernancePanel } from "./StructuredPanels/GovernancePanel.js";
+import { UxPanel } from "./StructuredPanels/UxPanel.js";
+import { UiMockupPanel } from "./StructuredPanels/UiMockupPanel.js";
+import { DevOpsPanel } from "./StructuredPanels/DevOpsPanel.js";
+import { SecurityPanel } from "./StructuredPanels/SecurityPanel.js";
+import { CompliancePanel } from "./StructuredPanels/CompliancePanel.js";
+import { AuditorPanel } from "./StructuredPanels/AuditorPanel.js";
 import { GenericPanel } from "./StructuredPanels/GenericPanel.js";
 import { DiffViewer } from "./DiffViewer.js";
 import { ImpactAnalysisCard } from "./ImpactAnalysisCard.js";
@@ -327,17 +335,35 @@ const OutputViewerComponent: React.FC<OutputViewerProps> = ({
   const renderStructuredPanel = () => {
     if (!effectiveResult?.output) return null;
     switch (agentName) {
+      case "Discovery":
+        return <DiscoveryPanel output={effectiveResult.output} />;
+      case "RiskElicitor":
+        return <GovernancePanel output={effectiveResult.output} agentName="RiskElicitor" />;
+      case "TierClassifier":
+        return <GovernancePanel output={effectiveResult.output} agentName="TierClassifier" />;
+      case "PM":
+        return <SpecPanel output={effectiveResult.output} />;
       case "SolutionArchitect":
       case "SoftwareArchitect":
         return <ArchitecturePanel output={effectiveResult.output} />;
-      case "PM":
-        return <SpecPanel output={effectiveResult.output} />;
+      case "UX":
+        return <UxPanel output={effectiveResult.output} />;
+      case "UI":
+        return <UiMockupPanel output={effectiveResult.output} />;
       case "DataArchitect":
         return <DataModelPanel output={effectiveResult.output} />;
+      case "DevOps":
+        return <DevOpsPanel output={effectiveResult.output} />;
+      case "Security":
+        return <SecurityPanel output={effectiveResult.output} />;
+      case "Compliance":
+        return <CompliancePanel output={effectiveResult.output} />;
       case "QA":
         return <QaPanel output={effectiveResult.output} />;
       case "TechLead":
         return <TechLeadPanel output={effectiveResult.output} />;
+      case "Auditor":
+        return <AuditorPanel output={effectiveResult.output} />;
       default:
         return <GenericPanel output={effectiveResult.output} />;
     }

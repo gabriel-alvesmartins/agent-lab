@@ -258,69 +258,62 @@ app.get("/api/models", async (_req, res) => {
     discoverOllamaModels(),
   ]);
 
-  const providers = {
-    anthropic: {
-      name: "Anthropic Claude",
-      available: Boolean(process.env.ANTHROPIC_API_KEY),
-      models: Array.from(new Set([
-        "anthropic:claude-sonnet-5-5",
-        "anthropic:claude-haiku-5-5",
-        "anthropic:claude-opus-5-5",
-        ...anthropicLive.map((m) => `anthropic:${m}`),
-      ])),
-      default: "anthropic:claude-sonnet-5-5",
-      descriptions: {
-        "anthropic:claude-haiku-5-5": "Claude Haiku 5.5 — Rapidez, baixo custo e tarefas em alto volume (out/2026)",
-        "anthropic:claude-sonnet-5-5": "Claude Sonnet 5.5 — Equilíbrio ideal entre capacidade, velocidade e custo",
-        "anthropic:claude-opus-5-5": "Claude Opus 5.5 — Modelo de ponta para raciocínio complexo e arquitetura",
-      },
-    },
-    openai: {
-      name: "OpenAI",
-      available: Boolean(process.env.OPENAI_API_KEY),
-      models: Array.from(new Set([
-        "openai:gpt-6-astra",
-        "openai:gpt-6-1-sol",
-        "openai:gpt-6-luna",
-        ...openAiLive.map((m) => `openai:${m}`),
-      ])),
-      default: "openai:gpt-6-astra",
-      descriptions: {
-        "openai:gpt-6-astra": "GPT-6 Astra — Modelo de ponta para raciocínio complexo e programação",
-        "openai:gpt-6-1-sol": "GPT-6.1 Sol — Alternativa de alto desempenho com menor custo",
-        "openai:gpt-6-luna": "GPT-6 Luna — Otimizado para eficiência máxima e tarefas em grande volume",
-      },
-    },
-    google: {
-      name: "Google Gemini",
-      available: Boolean(process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY),
-      models: Array.from(new Set([
-        "google:gemini-3-8-flash",
-        "google:gemini-4-argon",
-        "google:gemini-3-8-live-extended-thinking",
-        "google:gemini-3-8-live",
-        ...googleLive.slice(0, 8).map((m) => `google:${m}`),
-      ])),
-      default: "google:gemini-3-8-flash",
-      descriptions: {
-        "google:gemini-4-argon": "Gemini 4 Argon — Modelo de ponta para engenharia e defesa cibernética",
-        "google:gemini-3-8-flash": "Gemini 3.8 Flash — Modelo voltado à velocidade e eficiência em produção",
-        "google:gemini-3-8-live-extended-thinking": "Gemini 3.8 Live Extended Thinking — Linha especializada com raciocínio complexo",
-        "google:gemini-3-8-live": "Gemini 3.8 Live — Linha especializada em conversação e streaming em tempo real",
-      },
-    },
-    ollama: {
-      name: "Ollama (Local)",
-      available: Boolean(process.env.OLLAMA_BASE_URL || ollamaLive.length > 0),
-      models: Array.from(new Set([
-        "ollama:llama3.3",
-        "ollama:qwen2.5-coder",
-        "ollama:deepseek-r1",
-        ...ollamaLive.map((m) => `ollama:${m}`),
-      ])),
-      default: "ollama:llama3.3",
-    },
+  // Só modelos que a API de cada provedor devolve para a chave configurada
+  // (sem nomes fixos no código). Se a descoberta falhar com a chave presente,
+  // `fallback` mantém um modelo conhecido para o provedor continuar utilizável.
+  const buildProvider = (
+    name: string,
+    available: boolean,
+    prefix: string,
+    live: string[],
+    preferred: string[],
+    fallback: string[] = [],
+  ) => {
+    const ids = (live.length > 0 ? live : fallback).map((m) => `${prefix}:${m}`);
+    const models = Array.from(new Set(ids));
+    const preferredId = preferred.map((p) => `${prefix}:${p}`).find((p) => models.includes(p));
+    return { name, available, models, default: preferredId ?? models[0] };
   };
+
+  const allProviders = {
+    anthropic: buildProvider(
+      "Anthropic Claude",
+      Boolean(process.env.ANTHROPIC_API_KEY),
+      "anthropic",
+      anthropicLive,
+      ["claude-sonnet-5-5"],
+      ["claude-sonnet-5-5"],
+    ),
+    openai: buildProvider("OpenAI", Boolean(process.env.OPENAI_API_KEY), "openai", openAiLive, []),
+    google: buildProvider(
+      "Google Gemini",
+      Boolean(process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY),
+      "google",
+      // A API do Google também lista modelos de imagem, música, robótica e
+      // agentes prontos (que não geram a saída de texto estruturada dos agentes),
+      // além de previews, versões lite, Gemma e variantes especiais — fora da lista.
+      googleLive.filter(
+        (m) =>
+          !/image|lyria|banana|robotics|transcribe|computer-use|deep-research|antigravity|preview|lite|gemma|omni|customtools/.test(
+            m,
+          ),
+      ),
+      ["gemini-flash-latest"],
+      ["gemini-flash-latest"],
+    ),
+    ollama: buildProvider(
+      "Ollama (Local)",
+      Boolean(process.env.OLLAMA_BASE_URL || ollamaLive.length > 0),
+      "ollama",
+      ollamaLive,
+      [],
+    ),
+  };
+
+  // Provedores sem chave (ou sem nenhum modelo) não aparecem na interface.
+  const providers = Object.fromEntries(
+    Object.entries(allProviders).filter(([, p]) => p.available && p.models.length > 0),
+  );
   res.json({ providers });
 });
 

@@ -40,7 +40,7 @@ export async function discoverGoogleModels(apiKey?: string): Promise<string[]> {
   try {
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`, {
       headers: { "Content-Type": "application/json" },
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(15000),
     });
 
     if (!res.ok) return [];
@@ -84,7 +84,7 @@ export async function discoverAnthropicModels(apiKey?: string, workspaceId?: str
 
     const res = await fetch("https://api.anthropic.com/v1/models", {
       headers,
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(15000),
     });
 
     if (!res.ok) return [];
@@ -117,7 +117,7 @@ export async function discoverOpenAIModels(apiKey?: string): Promise<string[]> {
       headers: {
         Authorization: `Bearer ${key}`,
       },
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(15000),
     });
 
     if (!res.ok) return [];

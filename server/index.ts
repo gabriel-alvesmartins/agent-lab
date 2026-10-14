@@ -259,8 +259,9 @@ app.get("/api/models", async (_req, res) => {
   ]);
 
   // Só modelos que a API de cada provedor devolve para a chave configurada
-  // (sem nomes fixos no código). Se a descoberta falhar, o provedor fica sem
-  // modelos e some da interface (filtro abaixo).
+  // (sem nomes fixos no código). Se a chave existe mas a descoberta falhou
+  // (timeout, rede), o provedor continua visível com o modelo preferido e o
+  // nome avisa que a lista não foi verificada — em vez de sumir sem explicação.
   const buildProvider = (
     name: string,
     available: boolean,
@@ -268,6 +269,15 @@ app.get("/api/models", async (_req, res) => {
     live: string[],
     preferred: string[],
   ) => {
+    if (available && live.length === 0 && preferred.length > 0) {
+      const fallbackId = `${prefix}:${preferred[0]}`;
+      return {
+        name: `${name} (não foi possível listar os modelos)`,
+        available,
+        models: [fallbackId],
+        default: fallbackId,
+      };
+    }
     const models = Array.from(new Set(live.map((m) => `${prefix}:${m}`)));
     const preferredId = preferred.map((p) => `${prefix}:${p}`).find((p) => models.includes(p));
     return { name, available, models, default: preferredId ?? models[0] };

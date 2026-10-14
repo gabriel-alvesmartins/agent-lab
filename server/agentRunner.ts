@@ -201,7 +201,7 @@ export async function getAgentCanonicalPrompt(
 function findUnknownFields(schema: any, input: unknown): string[] {
   const shape = schema?.shape;
   if (!shape || typeof input !== "object" || input === null || Array.isArray(input)) return [];
-  return Object.keys(input).filter((key) => !(key in shape));
+  return Object.keys(input).filter((key) => !Object.prototype.hasOwnProperty.call(shape, key));
 }
 
 export async function validateAgentInput(agentName: string, input: unknown) {

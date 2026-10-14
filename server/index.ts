@@ -259,18 +259,16 @@ app.get("/api/models", async (_req, res) => {
   ]);
 
   // Só modelos que a API de cada provedor devolve para a chave configurada
-  // (sem nomes fixos no código). Se a descoberta falhar com a chave presente,
-  // `fallback` mantém um modelo conhecido para o provedor continuar utilizável.
+  // (sem nomes fixos no código). Se a descoberta falhar, o provedor fica sem
+  // modelos e some da interface (filtro abaixo).
   const buildProvider = (
     name: string,
     available: boolean,
     prefix: string,
     live: string[],
     preferred: string[],
-    fallback: string[] = [],
   ) => {
-    const ids = (live.length > 0 ? live : fallback).map((m) => `${prefix}:${m}`);
-    const models = Array.from(new Set(ids));
+    const models = Array.from(new Set(live.map((m) => `${prefix}:${m}`)));
     const preferredId = preferred.map((p) => `${prefix}:${p}`).find((p) => models.includes(p));
     return { name, available, models, default: preferredId ?? models[0] };
   };
@@ -282,9 +280,16 @@ app.get("/api/models", async (_req, res) => {
       "anthropic",
       anthropicLive,
       ["claude-sonnet-5-5"],
-      ["claude-sonnet-5-5"],
     ),
-    openai: buildProvider("OpenAI", Boolean(process.env.OPENAI_API_KEY), "openai", openAiLive, []),
+    openai: buildProvider(
+      "OpenAI",
+      Boolean(process.env.OPENAI_API_KEY),
+      "openai",
+      // Fora: modelos de imagem, áudio, voz, transcrição, embeddings e busca,
+      // que não geram a saída de texto estruturada dos agentes.
+      openAiLive.filter((m) => !/image|audio|realtime|tts|transcribe|embedding|search|dall-e/.test(m)),
+      [],
+    ),
     google: buildProvider(
       "Google Gemini",
       Boolean(process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY),
@@ -298,7 +303,6 @@ app.get("/api/models", async (_req, res) => {
             m,
           ),
       ),
-      ["gemini-flash-latest"],
       ["gemini-flash-latest"],
     ),
     ollama: buildProvider(

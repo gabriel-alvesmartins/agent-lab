@@ -70,6 +70,7 @@ export function App() {
   const [validationStatus, setValidationStatus] = useState<{
     valid: boolean;
     errors?: Array<{ path: string; message: string }>;
+    unknownFields?: string[];
   } | null>(null);
 
   // Estados de configuração de modelo e modo

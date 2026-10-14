@@ -35,7 +35,11 @@ export async function fetchAgentSchemas(
 export async function validateAgentInput(
   agentId: string,
   input: unknown
-): Promise<{ valid: boolean; errors?: Array<{ path: string; message: string }> }> {
+): Promise<{
+  valid: boolean;
+  errors?: Array<{ path: string; message: string }>;
+  unknownFields?: string[];
+}> {
   const res = await fetch(`${BASE_URL}/agents/${agentId}/validate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

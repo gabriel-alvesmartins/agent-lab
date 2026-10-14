@@ -50,7 +50,11 @@ interface InputEditorProps {
     sideB: { name: string; config?: AgentCharacteristicsConfig }
   ) => void;
   isRunningAB?: boolean;
-  validationStatus: { valid: boolean; errors?: Array<{ path: string; message: string }> } | null;
+  validationStatus: {
+    valid: boolean;
+    errors?: Array<{ path: string; message: string }>;
+    unknownFields?: string[];
+  } | null;
   onValidate: () => void;
   savedScenarios: SavedScenario[];
   onLoadScenario: (scenario: SavedScenario) => void;
@@ -738,6 +742,29 @@ const InputEditorComponent: React.FC<InputEditorProps> = ({
             ))}
           </div>
         )}
+
+        {/* Aviso: campos que o agente não declara (o Zod os descarta em silêncio) */}
+        {validationStatus?.unknownFields && validationStatus.unknownFields.length > 0 && (
+          <div
+            style={{
+              padding: "8px 12px",
+              background: "rgba(245, 158, 11, 0.08)",
+              borderTop: "1px solid rgba(245, 158, 11, 0.25)",
+              fontSize: 11,
+              color: "#fcd34d",
+              maxHeight: 90,
+              overflowY: "auto",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 600, marginBottom: 2 }}>
+              <AlertTriangle size={13} className="text-amber-400" />
+              <span>Campos ignorados — o agente não declara estes campos e eles serão descartados:</span>
+            </div>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, marginLeft: 19 }}>
+              {validationStatus.unknownFields.join(", ")}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── BOTTOM ACTION FOOTER: Validação e Botões de Execução ─────── */}
@@ -748,6 +775,8 @@ const InputEditorComponent: React.FC<InputEditorProps> = ({
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
+          flexWrap: "wrap",
+          rowGap: 8,
           background: "var(--bg-surface)",
         }}
       >
@@ -779,9 +808,22 @@ const InputEditorComponent: React.FC<InputEditorProps> = ({
           {validationStatus && (
             <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, marginLeft: 4 }}>
               {validationStatus.valid ? (
-                <div style={{ display: "flex", alignItems: "center", gap: 4, color: "var(--accent-emerald)" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    whiteSpace: "nowrap",
+                    color: validationStatus.unknownFields?.length ? "#fcd34d" : "var(--accent-emerald)",
+                  }}
+                >
                   <Check size={11} className="p10-success-icon" />
-                  <span style={{ fontWeight: 500, fontSize: 11 }}>Válido</span>
+                  <span style={{ fontWeight: 500, fontSize: 11 }}>
+                    Válido
+                    {validationStatus.unknownFields?.length
+                      ? ` · ${validationStatus.unknownFields.length} ignorado(s)`
+                      : ""}
+                  </span>
                 </div>
               ) : (
                 <div style={{ display: "flex", alignItems: "center", gap: 4, color: "var(--accent-rose)" }}>

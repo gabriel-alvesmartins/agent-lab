@@ -70,6 +70,7 @@ export function App() {
   const [validationStatus, setValidationStatus] = useState<{
     valid: boolean;
     errors?: Array<{ path: string; message: string }>;
+    unknownFields?: string[];
   } | null>(null);
 
   // Estados de configuração de modelo e modo
@@ -107,8 +108,11 @@ export function App() {
     fetchModelProviders()
       .then((data) => {
         setModelProviders(data);
-        if (data?.providers?.anthropic?.default) {
-          setSelectedModel(data.providers.anthropic.default);
+        // Modelo inicial: o padrão do primeiro provedor disponível (Anthropic, se houver chave).
+        const providers = data?.providers ?? {};
+        const first = providers.anthropic ?? Object.values(providers)[0];
+        if (first?.default) {
+          setSelectedModel(first.default);
         }
       })
       .catch((err) => console.warn("Model providers indisponíveis:", err));

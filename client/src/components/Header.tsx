@@ -21,19 +21,6 @@ const MODEL_DISPLAY_NAMES: Record<string, string> = {
   "anthropic:claude-sonnet-5-5": "Claude Sonnet 5.5 (Recomendado)",
   "anthropic:claude-haiku-5-5": "Claude Haiku 5.5 (Rápido / Alto Volume)",
   "anthropic:claude-opus-5-5": "Claude Opus 5.5 (Máximo Raciocínio)",
-  // OpenAI GPT-6
-  "openai:gpt-6-astra": "GPT-6 Astra (Fronteira & Raciocínio)",
-  "openai:gpt-6-1-sol": "GPT-6.1 Sol (Alto Desempenho / Custo Otimizado)",
-  "openai:gpt-6-luna": "GPT-6 Luna (Eficiência & Grande Volume)",
-  // Google Gemini 4 & 3.8
-  "google:gemini-4-argon": "Gemini 4 Argon (Programação & Defesa Cibernética)",
-  "google:gemini-3-8-flash": "Gemini 3.8 Flash (Velocidade & Eficiência)",
-  "google:gemini-3-8-live-extended-thinking": "Gemini 3.8 Live Extended Thinking (Raciocínio Complexo)",
-  "google:gemini-3-8-live": "Gemini 3.8 Live (Tempo Real)",
-  // Ollama
-  "ollama:deepseek-r1": "DeepSeek R1 (Raciocínio Aberto)",
-  "ollama:qwen2.5-coder": "Qwen 2.5 Coder (Código Especializado)",
-  "ollama:llama3.3": "Llama 3.3 (Meta Open Source)",
 };
 
 function formatModelLabel(id: string): string {
@@ -224,7 +211,7 @@ const HeaderComponent: React.FC<HeaderProps> = ({
               }}
             >
               {Object.entries(modelProviders.providers).map(([key, provider]) => (
-                <optgroup key={key} label={`${provider.name} ${provider.available ? "(Chave OK)" : "(Sem Chave)"}`}>
+                <optgroup key={key} label={provider.name}>
                   {provider.models.map((m) => (
                     <option key={m} value={m}>
                       {formatModelLabel(m)}

@@ -193,12 +193,25 @@ export async function getAgentCanonicalPrompt(
   return String(agent.systemPrompt || "");
 }
 
+/**
+ * Campos do input que o inputSchema do agente não declara. O Zod (modo padrão,
+ * não-strict) os descarta em silêncio — então um nome digitado errado some sem
+ * erro e o agente roda sem aquela informação. Aqui eles viram aviso.
+ */
+function findUnknownFields(schema: any, input: unknown): string[] {
+  const shape = schema?.shape;
+  if (!shape || typeof input !== "object" || input === null || Array.isArray(input)) return [];
+  return Object.keys(input).filter((key) => !Object.prototype.hasOwnProperty.call(shape, key));
+}
+
 export async function validateAgentInput(agentName: string, input: unknown) {
   const agent = await getAgentInstance(agentName);
+  const unknownFields = findUnknownFields(agent.inputSchema, input);
   const result = agent.inputSchema.safeParse(input);
   if (!result.success) {
     return {
       valid: false,
+      unknownFields,
       errors: result.error.issues.map((issue: any) => ({
         path: issue.path.join(".") || "(root)",
         message: issue.message,
@@ -208,6 +221,7 @@ export async function validateAgentInput(agentName: string, input: unknown) {
   }
   return {
     valid: true,
+    unknownFields,
     data: result.data,
   };
 }

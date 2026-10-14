@@ -298,7 +298,7 @@ app.get("/api/models", async (_req, res) => {
       // Fora: modelos de imagem, áudio, voz, transcrição, embeddings e busca,
       // que não geram a saída de texto estruturada dos agentes.
       openAiLive.filter((m) => !/image|audio|realtime|tts|transcribe|embedding|search|dall-e/.test(m)),
-      [],
+      ["gpt-5"],
     ),
     google: buildProvider(
       "Google Gemini",
